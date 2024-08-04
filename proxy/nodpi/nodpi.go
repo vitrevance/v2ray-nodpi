@@ -6,6 +6,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/google/gopacket"
 	core "github.com/v2fly/v2ray-core/v5"
 	"github.com/v2fly/v2ray-core/v5/common"
 	"github.com/v2fly/v2ray-core/v5/common/buf"
@@ -50,7 +51,7 @@ func (h *Handler) Init(config *Config, pm policy.Manager, d dns.Client) error {
 	h.policyManager = pm
 	h.dns = d
 
-	h.tlsSplitSize = 10
+	h.tlsSplitSize = 1000
 
 	return nil
 }
@@ -91,7 +92,17 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 		var rawConn internet.Connection
 		var err error
 		if destination.Network == net.Network_TCP {
-			rawConn, err = NewTCPConn(outbound.Target)
+			// addr := h.resolveIP(outbound.Target.Address.String())
+			// rawConn, err = NewTCPConn(&net.TCPAddr{
+			// 	IP:   addr.IP(),
+			// 	Port: int(destination.Port),
+			// })
+			var under internet.Connection
+			under, err = dialer.Dial(ctx, destination)
+			if err != nil {
+				return err
+			}
+			rawConn, err = WrapTCPConn(under)
 		} else {
 			rawConn, err = dialer.Dial(ctx, destination)
 		}
@@ -188,8 +199,16 @@ func (h *Handler) sendFakeHTTPS(conn *Connection) error {
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00}
-	conn.Write(fakeHTTPS)
-	return nil
+	p := conn.PreparePacket(fakeHTTPS)
+	p.tcp.SYN = true
+	p.tcp.ACK = true
+	p.tcp.Seq = uint32(dice.Roll(2000000000))
+	b, err := conn.SerialziePacket(p, gopacket.SerializeOptions{FixLengths: true, ComputeChecksums: true})
+	if err != nil {
+		return err
+	}
+	err = conn.WritePacket(b)
+	return err
 }
 
 func (h *Handler) performRequest(input buf.Reader, conn *Connection, timer *signal.ActivityTimer) error {
@@ -207,6 +226,7 @@ func (h *Handler) performRequest(input buf.Reader, conn *Connection, timer *sign
 	}
 	if err != nil {
 		newError("failed to parse TLS handshake").Base(err).WriteToLog()
+		conn.Write(raw)
 	} else {
 		if tls.Body[0] != 1 {
 			newError("this TLS is not a ClientHello - skipping").WriteToLog()
@@ -237,11 +257,18 @@ func (h *Handler) performRequest(input buf.Reader, conn *Connection, timer *sign
 				// newRaw = append(newRaw, tls.Encode()...)
 				parts = append(parts, tls.Encode())
 			}
-			err = SendReverseOrder(conn, parts...)
+			// err = SendReverseOrder(conn, parts...)
+			h.sendFakeHTTPS(conn)
+			for _, part := range parts {
+				_, err = conn.Write(part)
+			}
 			if err != nil {
 				return newError("failed to send tls reverse order").Base(err)
 			}
-			conn.Write(raw[totalTLSLength:])
+			if len(raw) > totalTLSLength {
+				conn.Write(raw[totalTLSLength:])
+			}
+			// conn.Write(raw)
 		}
 	}
 
