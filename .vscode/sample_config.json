@@ -1,0 +1,35 @@
+{
+    "log": {
+        "loglevel": "debug"
+    },
+    "inbounds": [
+        {
+            "protocol": "vmess",
+            "port": 25565,
+            "users": [
+                {
+                    "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+                    "alterId": 0,
+                    "security": "none",
+                    "level": 0
+                }
+            ]
+        },
+        {
+            "protocol": "socks",
+            "port": 12345,
+            "settings": {
+                "auth": "noauth",
+                "accounts": [],
+                "udp": true,
+                "ip": "192.168.0.104",
+                "userLevel": 0
+            }
+        }
+    ],
+    "outbounds": [
+        {
+            "protocol": "nodpi"
+        }
+    ]
+}
