@@ -6,8 +6,10 @@ import (
 )
 
 type NodpiConfig struct {
+	// ChunkSize uint32 `json:"chunkSize"`
+	nodpi.Config
 }
 
-func (l NodpiConfig) Build() (proto.Message, error) {
-	return &nodpi.Config{}, nil
+func (l *NodpiConfig) Build() (proto.Message, error) {
+	return &l.Config, nil
 }

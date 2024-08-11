@@ -6,19 +6,9 @@ option go_package = "github.com/v2fly/v2ray-core/v5/proxy/nodpi";
 option java_package = "com.v2ray.core.proxy.nodpi";
 option java_multiple_files = true;
 
-import "google/protobuf/any.proto";
 import "common/protoext/extensions.proto";
 
-message NoneResponse {}
-
-message HTTPResponse {}
-
 message Config {
-  google.protobuf.Any response = 1;
-}
-
-
-message SimplifiedConfig {
-  option (v2ray.core.common.protoext.message_opt).type = "outbound";
-  option (v2ray.core.common.protoext.message_opt).short_name = "nodpi";
+  uint32 chunk_size = 1;
+  uint32 chunk_delay = 2;
 }

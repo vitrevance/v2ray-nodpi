@@ -29,7 +29,11 @@
     ],
     "outbounds": [
         {
-            "protocol": "nodpi"
+            "protocol": "nodpi",
+            "settings": {
+                "chunk_size": 150,
+                "chunk_delay": 800
+            }
         }
     ]
 }

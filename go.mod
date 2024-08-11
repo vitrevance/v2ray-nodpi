@@ -45,6 +45,11 @@ require (
 )
 
 require (
+	github.com/google/subcommands v1.2.0 // indirect
+	github.com/sirupsen/logrus v1.9.3 // indirect
+)
+
+require (
 	github.com/aead/cmac v0.0.0-20160719120800-7af84192f0b1 // indirect
 	github.com/ajg/form v1.5.1 // indirect
 	github.com/andybalholm/brotli v1.0.6 // indirect
@@ -75,6 +80,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/riobard/go-bloom v0.0.0-20200614022211-cdc8013cb5b3 // indirect
 	github.com/secure-io/siv-go v0.0.0-20180922214919-5ff40651e2c4 // indirect
+	github.com/terassyi/gotcp v0.0.0-20210314154629-0ccfc8b80b14
 	github.com/xtaci/smux v1.5.24 // indirect
 	go.uber.org/mock v0.4.0 // indirect
 	golang.org/x/exp v0.0.0-20230725093048-515e97ebf090 // indirect
