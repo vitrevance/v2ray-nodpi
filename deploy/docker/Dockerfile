@@ -1,4 +1,4 @@
-FROM golang:1.22.1 as build
+FROM golang:1.22-alpine3.19 AS stage1
 
 WORKDIR /nodpi
 
@@ -8,14 +8,12 @@ RUN go mod download
 
 COPY . .
 
-RUN go build -o /nodpi/server ./main/main.go
+RUN go build -o ./v2ray-server ./main/
 
-FROM alpine:3.14
+FROM alpine:3.19 AS stage2
 
-WORKDIR /
+WORKDIR /app
 
-COPY --from=build /nodpi/server server
+COPY --from=stage1 /nodpi/v2ray-server /app/v2ray-server
 
-EXPOSE 80
-
-CMD [ "/server" "--config" "/config.json" ]
+CMD ["/app/v2ray-server", "run", "--config", "/config.json"]

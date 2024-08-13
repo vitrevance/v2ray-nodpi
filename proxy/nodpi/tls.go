@@ -3,10 +3,6 @@ package nodpi
 import (
 	"encoding/binary"
 	"fmt"
-	"slices"
-
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
 )
 
 type TLSHeader struct {
@@ -63,59 +59,3 @@ func parseTLSHandshake(buf []byte) (TLSRecord, error) {
 		Body: buf[5 : size+5],
 	}, nil
 }
-
-func containsSubslice[T comparable](s1 []T, s2 []T) int {
-	l1 := len(s1)
-	l2 := len(s2)
-	if l2 > l1 {
-		return -1
-	}
-	for i := 0; i < l1-l2; i++ {
-		if slices.Equal(s1[i:l2+i], s2) {
-			return i
-		}
-	}
-	return -1
-}
-
-func extractSNI(t *layers.TLS) ([]byte, error) {
-	for _, data := range t.AppData {
-		if data.ContentType == 0 {
-			return data.Payload, nil
-		}
-	}
-	return nil, newError("SNI segment not found")
-}
-
-func removeSNI(t *layers.TLS) ([]byte, error) {
-	sniIndex := -1
-	for i, data := range t.Handshake {
-		if data.ContentType == 0 {
-			sniIndex = i
-			break
-		}
-	}
-	if sniIndex >= 0 {
-		t.AppData[sniIndex], t.AppData[len(t.AppData)] = t.AppData[len(t.AppData)], t.AppData[sniIndex]
-		t.AppData = t.AppData[:len(t.AppData)-1]
-	}
-	sb := gopacket.NewSerializeBuffer()
-	err := t.SerializeTo(sb, gopacket.SerializeOptions{
-		FixLengths:       true,
-		ComputeChecksums: true,
-	})
-	if err != nil {
-		return nil, newError("failed to serialize TLS packet").Base(err)
-	}
-	return sb.Bytes(), nil
-}
-
-// func makeHandshakeWithSNIPart(base *layers.TLS, sni []byte) []byte {
-// 	t := &layers.TLS{}
-// 	t.Handshake = base.Handshake
-// 	t.AppData = []layers.TLSAppDataRecord{
-// 		layers.TLSAppDataRecord{
-// 			TLSRecordHeader: ,
-// 		}
-// 	}
-// }

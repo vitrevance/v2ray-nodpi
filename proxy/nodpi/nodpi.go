@@ -9,6 +9,7 @@ import (
 	core "github.com/v2fly/v2ray-core/v5"
 	"github.com/v2fly/v2ray-core/v5/common"
 	"github.com/v2fly/v2ray-core/v5/common/buf"
+	"github.com/v2fly/v2ray-core/v5/common/dice"
 	"github.com/v2fly/v2ray-core/v5/common/errors"
 	"github.com/v2fly/v2ray-core/v5/common/net"
 	"github.com/v2fly/v2ray-core/v5/common/retry"
@@ -51,15 +52,30 @@ func (h *Handler) Init(config *Config, pm policy.Manager, d dns.Client) error {
 	return nil
 }
 
+func (h *Handler) resolveIP(domain string) net.Address {
+	ips, err := dns.LookupIPWithOption(h.dns, domain, dns.IPOption{
+		IPv4Enable: true,
+		IPv6Enable: false,
+		FakeEnable: false,
+	})
+	if err != nil {
+		newError("failed to get IP address for domain ", domain).Base(err).WriteToLog()
+	}
+	if len(ips) == 0 {
+		return nil
+	}
+	return net.IPAddress(ips[dice.Roll(len(ips))])
+}
+
 func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer internet.Dialer) error {
 	outbound := session.OutboundFromContext(ctx)
 	if outbound == nil || !outbound.Target.IsValid() {
 		return newError("target not specified.")
 	}
 
-	// outbound.Resolver = func(ctx context.Context, domain string) net.Address {
-	// 	return h.resolveIP(ctx, domain)
-	// }
+	outbound.Resolver = func(ctx context.Context, domain string) net.Address {
+		return h.resolveIP(domain)
+	}
 
 	destination := outbound.Target
 	newError("opening connection to ", destination).WriteToLog(session.ExportIDToError(ctx))
