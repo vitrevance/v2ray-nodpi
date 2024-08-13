@@ -169,7 +169,15 @@ func (h *Handler) performRequest(input buf.Reader, conn net.Conn, timer *signal.
 			conn.Write(raw)
 		} else {
 			conn.Write(raw[:1])
-			conn.Write(raw[1:])
+			time.Sleep(time.Millisecond * time.Duration(h.config.ChunkDelay))
+			raw = raw[1:]
+			if h.config.ChunkSize > 0 {
+				for uint32(len(raw)) > h.config.ChunkSize {
+					conn.Write(raw[:h.config.ChunkSize])
+					raw = raw[h.config.ChunkSize:]
+				}
+			}
+			conn.Write(raw)
 		}
 	}
 
