@@ -1,0 +1,33 @@
+{
+    "log": {
+        "loglevel": "warning"
+    },
+    "inbounds": [
+        {
+            "protocol": "vmess",
+            "port": 443,
+            "settings": {
+                "auth": null,
+                "udp": false,
+                "ip": null,
+                "clients": [
+                    {
+                        "id": "<GENERATE UUID AND PUT IT HERE>",
+                        "alterId": 4,
+                        "security": "aes-128-gcm",
+                        "level": 0
+                    }
+                ]
+            }
+        }
+    ],
+    "outbounds": [
+        {
+            "protocol": "nodpi",
+            "settings": {
+                "chunk_size": 15,
+                "chunk_delay": 45
+            }
+        }
+    ]
+}

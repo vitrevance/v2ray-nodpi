@@ -5,25 +5,39 @@
     "inbounds": [
         {
             "protocol": "vmess",
-            "port": 25565,
-            "users": [
-                {
-                    "id": "27848739-7e62-4138-9fd3-098a63964b6b",
-                    "alterId": 0,
-                    "security": "none",
-                    "level": 0
-                }
-            ]
+            "port": 30000,
+            "settings": {
+                "auth": null,
+                "udp": false,
+                "ip": null,
+                "clients": [
+                    {
+                        "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+                        "alterId": 4,
+                        "security": "aes-128-gcm",
+                        "level": 0
+                    }
+                ]
+            }
         },
         {
             "protocol": "socks",
-            "port": 12345,
+            "port": 30001,
             "settings": {
                 "auth": "noauth",
                 "accounts": [],
-                "udp": true,
+                "udp": false,
                 "ip": "192.168.0.104",
                 "userLevel": 0
+            }
+        },
+        {
+            "protocol": "shadowsocks",
+            "port": 30002,
+            "settings": {
+                "networks": "tcp",
+                "method": "aes-256-gcm",
+                "password": "hello"
             }
         }
     ],

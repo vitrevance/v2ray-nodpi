@@ -1,0 +1,12 @@
+services:
+  v2ray-server:
+    build:
+      context: ../../
+      dockerfile: ./deploy/docker/Dockerfile
+    ports:
+      - "443:443"
+    volumes:
+      - type: bind
+        read_only: true
+        source: ./config.json
+        target: /config.json

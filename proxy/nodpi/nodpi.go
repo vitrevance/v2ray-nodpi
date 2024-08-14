@@ -73,9 +73,9 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 		return newError("target not specified.")
 	}
 
-	// outbound.Resolver = func(ctx context.Context, domain string) net.Address {
-	// 	return h.resolveIP(ctx, domain)
-	// }
+	outbound.Resolver = func(ctx context.Context, domain string) net.Address {
+		return h.resolveIP(domain)
+	}
 
 	destination := outbound.Target
 	newError("opening connection to ", destination).WriteToLog(session.ExportIDToError(ctx))
@@ -87,23 +87,7 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 	err := retry.ExponentialBackoff(5, 100).On(func() error {
 		var rawConn internet.Connection
 		var err error
-		if destination.Network == net.Network_TCP {
-			addr := h.resolveIP(outbound.Target.Address.String())
-			// rawConn, err = NewTCPConn(&net.TCPAddr{
-			// 	IP:   addr.IP(),
-			// 	Port: int(destination.Port),
-			// })
-			var under internet.Connection
-			// under, err = dialer.Dial(ctx, destination)
-			under, err = DialTCP(&net.TCPAddr{IP: addr.IP(), Port: int(destination.Port)})
-			if err != nil {
-				return err
-			}
-			rawConn, err = WrapTCPConn(under)
-			// rawConn, err = DialTCP(&net.TCPAddr{IP: addr.IP(), Port: int(destination.Port)})
-		} else {
-			rawConn, err = dialer.Dial(ctx, destination)
-		}
+		rawConn, err = dialer.Dial(ctx, destination)
 		if err != nil {
 			return err
 		}
@@ -125,7 +109,7 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 		var writer buf.Writer
 		if destination.Network == net.Network_TCP {
 			// writer = buf.NewWriter(conn)
-			err := h.performRequest(input, conn.(*Connection), timer)
+			err := h.performRequest(input, conn, timer)
 			if err != nil {
 				return newError("failed to process TCP request").Base(err)
 			}
@@ -163,7 +147,7 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 	return nil
 }
 
-func (h *Handler) performRequest(input buf.Reader, conn *Connection, timer *signal.ActivityTimer) error {
+func (h *Handler) performRequest(input buf.Reader, conn net.Conn, timer *signal.ActivityTimer) error {
 	var err error = ReadMore
 	var tls TLSRecord
 	var raw []byte
@@ -184,62 +168,16 @@ func (h *Handler) performRequest(input buf.Reader, conn *Connection, timer *sign
 			newError("this TLS is not a ClientHello - skipping").WriteToLog()
 			conn.Write(raw)
 		} else {
-			totalTLSLength := len(tls.Body) + 5
-			if totalTLSLength != len(raw) {
-				newError("unexpected content in TLS packet").WriteToLog()
-			}
-			splitSize := int(h.config.GetChunkSize())
-			if pos := containsSubslice(tls.Body, []byte("googlevideo")); pos != -1 {
-				newError("this TLS is from youtube YAY!").WriteToLog()
-				splitSize = pos + 3
-				// h.sendFakeHTTPS(conn)
-			}
-			parts := make([][]byte, 0)
-			for len(tls.Body) > splitSize {
-				rest, err := tls.Split(splitSize)
-				if err != nil {
-					return newError("failed to split TLS").Base(err)
+			conn.Write(raw[:1])
+			time.Sleep(time.Millisecond * time.Duration(h.config.ChunkDelay))
+			raw = raw[1:]
+			if h.config.ChunkSize > 0 {
+				for uint32(len(raw)) > h.config.ChunkSize {
+					conn.Write(raw[:h.config.ChunkSize])
+					raw = raw[h.config.ChunkSize:]
 				}
-				// newRaw = append(newRaw, tls.Encode()...)
-				parts = append(parts, tls.Encode())
-				tls = rest
-				timer.Update()
 			}
-			if len(tls.Body) > 0 {
-				// newRaw = append(newRaw, tls.Encode()...)
-				parts = append(parts, tls.Encode())
-			}
-			// err = SendReverseOrder(conn, parts...)
-			conn.SendFakeHTTPS()
-			// err = conn.DisableDelay(true)
-			// if err != nil {
-			// 	return newError("failed to disable delay").Base(err)
-			// }
-			// err = conn.SetTTL(3)
-			// if err != nil {
-			// 	return newError("failed to decrease TTL").Base(err)
-			// }
-			// conn.Write(FakeHTTPSPayload)
-			time.Sleep(time.Millisecond * 50)
-			// err = conn.SetTTL(64)
-			if err != nil {
-				return newError("failed to restore TTL").Base(err)
-			}
-			for _, part := range parts {
-				_, err = conn.Write(part)
-				// time.Sleep(time.Millisecond * time.Duration(h.config.ChunkDelay))
-			}
-			if err != nil {
-				return newError("failed to send tls reverse order").Base(err)
-			}
-			// err = conn.DisableDelay(false)
-			if err != nil {
-				return newError("failed to enable delay").Base(err)
-			}
-			if len(raw) > totalTLSLength {
-				conn.Write(raw[totalTLSLength:])
-			}
-			// conn.Write(raw)
+			conn.Write(raw)
 		}
 	}
 
