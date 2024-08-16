@@ -4,6 +4,7 @@ import (
 	"github.com/v2fly/v2ray-core/v5/main/commands"
 	"github.com/v2fly/v2ray-core/v5/main/commands/base"
 	_ "github.com/v2fly/v2ray-core/v5/main/distro/all"
+	_ "github.com/vitrevance/v2ray-nodpi/proxy/nodpi"
 )
 
 func main() {
