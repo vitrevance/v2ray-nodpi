@@ -1,44 +1,71 @@
-<div>
-  <img width="190" height="210" align="left" src="https://raw.githubusercontent.com/v2fly/v2fly-github-io/master/docs/.vuepress/public/readme-logo.png" alt="V2Ray"/>
-  <br>
-  <h1>Project V</h1>
-  <p>Project V is a set of network tools that helps you to build your own computer network. It secures your network connections and thus protects your privacy.</p>
-</div>
+# NoDPI - DPI Circumvention Mechanism Based on V2Ray
 
-[![GitHub Test Badge](https://github.com/v2fly/v2ray-core/workflows/Test/badge.svg)](https://github.com/v2fly/v2ray-core/actions)
-[![codecov.io](https://codecov.io/gh/v2fly/v2ray-core/branch/master/graph/badge.svg?branch=master)](https://codecov.io/gh/v2fly/v2ray-core?branch=master)
-[![codebeat](https://goreportcard.com/badge/github.com/v2fly/v2ray-core)](https://goreportcard.com/report/github.com/v2fly/v2ray-core)
-[![Codacy Badge](https://app.codacy.com/project/badge/Grade/e150b7ede2114388921943bf23d95161)](https://www.codacy.com/gh/v2fly/v2ray-core/dashboard?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=v2fly/v2ray-core&amp;utm_campaign=Badge_Grade)
-[![Downloads](https://img.shields.io/github/downloads/v2fly/v2ray-core/total.svg)](https://github.com/v2fly/v2ray-core/releases/latest)
+This project leverages the powerful capabilities of [V2Ray](https://www.v2ray.com/) to help users bypass Deep Packet Inspection (DPI) and enhance their online privacy and freedom.
 
-## Related Links
+## Table of Contents
 
-- [Documentation](https://www.v2fly.org) and [Newcomer's Instructions](https://www.v2fly.org/guide/start.html)
-- Welcome to translate V2Ray documents via [Transifex](https://www.transifex.com/v2fly/public/)
+- [Introduction](#introduction)
+- [Features](#features)
+- [Installation Guide](#installation-guide)
+- [Running the Project with Docker](#running-the-project-with-docker)
+- [Configuration](#configuration)
+- [References](#references)
+- [License](#license)
 
-## Packaging Status
+## Introduction
 
-> If you are willing to package V2Ray for other distros/platforms, please let us know or seek for help via [GitHub issues](https://github.com/v2fly/v2ray-core/issues).
+DPI (Deep Packet Inspection) is a technology used by ISPs and network administrators to monitor and control internet traffic. This project aims to provide a simple mechanism to circumvent such restrictions using V2Ray, a versatile network tunneling tool.
 
-[![Packaging status](https://repology.org/badge/vertical-allrepos/v2ray.svg)](https://repology.org/project/v2ray/versions)
+## Features
 
-## License
+- Bypass DPI restrictions
+- Enhanced privacy and security
+- Easy to configure and deploy
+- Docker support for simplified setup
 
-[The MIT License (MIT)](https://raw.githubusercontent.com/v2fly/v2ray-core/master/LICENSE)
+## Installation Guide
 
-## Credits
+To get started with this project, you need to have Docker and Docker Compose installed on your machine.
 
-This repo relies on the following third-party projects:
+### Running the Project with Docker
 
-- In production:
-  - [gorilla/websocket](https://github.com/gorilla/websocket)
-  - [lucas-clemente/quic-go](https://github.com/lucas-clemente/quic-go)
-  - [pires/go-proxyproto](https://github.com/pires/go-proxyproto)
-  - [seiflotfy/cuckoofilter](https://github.com/seiflotfy/cuckoofilter)
-  - [google/starlark-go](https://github.com/google/starlark-go)
-  - [jhump/protoreflect](https://github.com/jhump/protoreflect)
-  - [inetaf/netaddr](https://github.com/inetaf/netaddr)
+0. Clone this repository
 
-- For testing only:
-  - [miekg/dns](https://github.com/miekg/dns)
-  - [h12w/socks](https://github.com/h12w/socks)
+1. Create a
+`config.json`
+file in the
+`deploy/docker`
+directory. You can use the provided
+`example-config.json`
+as a reference to fill in your V2Ray configuration.
+
+2. Adjust the
+`docker-compose.yaml`
+file if necessary to suit your specific requirements.
+
+3. Start the Docker container:
+```bash
+   docker-compose up -d
+```
+
+
+4. Your NoDPI server should now be running! You can check the logs to ensure everything is functioning correctly:
+```bash
+   docker-compose logs -f
+```
+5. Use V2Ray client to connect to the server.  
+List of UI clients from the V2Ray website:
+    - [Windows](https://www.v2ray.com/ru/ui_client/windows.html)
+    - [Android](https://www.v2ray.com/ru/ui_client/android.html)
+    - [iOS](https://www.v2ray.com/ru/ui_client/ios.html)
+
+
+## Configuration
+
+Make sure to configure your
+config.json
+file according to your needs. The V2Ray project provides extensive documentation on how to set up various configurations. You can refer to the V2Ray documentation for more details.
+
+## References
+
+For more information about V2Ray, please visit the official V2Ray GitHub repository: [V2Ray Project](https://www.v2ray.com/).

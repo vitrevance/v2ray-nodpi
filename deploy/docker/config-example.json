@@ -1,23 +1,30 @@
 {
     "log": {
-        "loglevel": "warning"
+        "access": {
+            "type": "Console",
+            "level": "Error"
+        },
+        "error": {
+            "type": "Console",
+            "level": "Error"
+        }
     },
     "inbounds": [
         {
             "protocol": "vmess",
             "port": 443,
             "settings": {
-                "auth": null,
-                "udp": false,
-                "ip": null,
-                "clients": [
-                    {
-                        "id": "<GENERATE UUID AND PUT IT HERE>",
-                        "alterId": 4,
-                        "security": "aes-128-gcm",
-                        "level": 0
-                    }
+                "users": [
+                    "<GENERATE UUID AND PUT IT HERE>"
                 ]
+            }
+        },
+        {
+            "protocol": "socks",
+            "port": 30001,
+            "settings": {
+                "udp_enabled": false,
+                "address": null
             }
         }
     ],

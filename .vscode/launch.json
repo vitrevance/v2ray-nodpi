@@ -16,7 +16,9 @@
             "args": [
                 "run",
                 "--config",
-                "${workspaceFolder}/.vscode/sample_config.json"
+                "${workspaceFolder}/.vscode/sample_config.json",
+                "-format",
+                "jsonv5"
             ]
         }
     ]

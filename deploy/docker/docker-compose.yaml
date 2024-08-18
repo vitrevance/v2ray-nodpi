@@ -10,3 +10,4 @@ services:
         read_only: true
         source: ./config.json
         target: /config.json
+    restart: unless-stopped

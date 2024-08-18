@@ -1,22 +1,21 @@
 {
     "log": {
-        "loglevel": "debug"
+        "access": {
+            "type": "Console",
+            "level": "Debug"
+        },
+        "error": {
+            "type": "Console",
+            "level": "Debug"
+        }
     },
     "inbounds": [
         {
             "protocol": "vmess",
-            "port": 30000,
+            "port": 443,
             "settings": {
-                "auth": null,
-                "udp": false,
-                "ip": null,
-                "clients": [
-                    {
-                        "id": "27848739-7e62-4138-9fd3-098a63964b6b",
-                        "alterId": 4,
-                        "security": "aes-128-gcm",
-                        "level": 0
-                    }
+                "users": [
+                    "11111111-1111-1111-1111-111111111111"
                 ]
             }
         },
@@ -24,20 +23,8 @@
             "protocol": "socks",
             "port": 30001,
             "settings": {
-                "auth": "noauth",
-                "accounts": [],
-                "udp": false,
-                "ip": "192.168.0.104",
-                "userLevel": 0
-            }
-        },
-        {
-            "protocol": "shadowsocks",
-            "port": 30002,
-            "settings": {
-                "networks": "tcp",
-                "method": "aes-256-gcm",
-                "password": "hello"
+                "udp_enabled": false,
+                "address": null
             }
         }
     ],
@@ -45,8 +32,8 @@
         {
             "protocol": "nodpi",
             "settings": {
-                "chunk_size": 150,
-                "chunk_delay": 800
+                "chunk_size": 8,
+                "chunk_delay": 45
             }
         }
     ]

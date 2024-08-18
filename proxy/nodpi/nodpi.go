@@ -22,8 +22,6 @@ import (
 	"github.com/v2fly/v2ray-core/v5/transport/internet"
 )
 
-// //go:generate go run github.com/v2fly/v2ray-core/v5/common/errors/errorgen
-// //go:generate protoc --go_out=. --go_opt=paths=source_relative -I ../.. proxy/nodpi/config.proto
 //go:generate protoc --go_out=../.. --go_opt=paths=source_relative -I ../.. proxy/nodpi/config.proto
 
 func init() {
