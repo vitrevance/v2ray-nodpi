@@ -18,6 +18,14 @@
                     "<GENERATE UUID AND PUT IT HERE>"
                 ]
             }
+        },
+        {
+            "protocol": "socks",
+            "port": 30001,
+            "settings": {
+                "udp_enabled": false,
+                "address": null
+            }
         }
     ],
     "outbounds": [
