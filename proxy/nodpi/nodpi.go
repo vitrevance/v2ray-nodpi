@@ -170,8 +170,11 @@ func (h *Handler) performRequest(input buf.Reader, conn net.Conn, timer *signal.
 			if h.config.GetSniFilters() != nil {
 				sni := tls.SNI()
 				if !h.filterSNI(sni) {
-					conn.Close()
-					return newError("blocked request by SNI: ", sni).AtInfo()
+					conn.Write(raw)
+					if err := buf.Copy(input, buf.NewWriter(conn), buf.UpdateActivity(timer)); err != nil {
+						return newError("failed to process request").Base(err)
+					}
+					return nil
 				}
 			}
 			conn.Write(raw[:1])
@@ -193,15 +196,16 @@ func (h *Handler) performRequest(input buf.Reader, conn net.Conn, timer *signal.
 	return nil
 }
 
-func (h *Handler) filterSNI(sni string) bool {
+func (h *Handler) filterSNI(sni string) (allow bool) {
+	allow = false
 	for _, v := range h.config.GetSniFilters().GetWhitelist() {
 		re, err := regexp.Compile(v)
 		if err != nil {
 			newError("this TLS is not a ClientHello - skipping").AtWarning().WriteToLog()
 			continue
 		}
-		if !re.MatchString(sni) {
-			return false
+		if re.MatchString(sni) {
+			allow = true
 		}
 	}
 	for _, v := range h.config.GetSniFilters().GetBlacklist() {
@@ -211,8 +215,8 @@ func (h *Handler) filterSNI(sni string) bool {
 			continue
 		}
 		if re.MatchString(sni) {
-			return false
+			allow = false
 		}
 	}
-	return true
+	return
 }

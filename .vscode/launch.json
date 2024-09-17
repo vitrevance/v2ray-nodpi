@@ -11,8 +11,6 @@
             "mode": "auto",
             "program": "${workspaceFolder}/main/main.go",
             "output": "${workspaceFolder}/build/debug",
-            "asRoot": true,
-            "console": "integratedTerminal",
             "args": [
                 "run",
                 "--config",

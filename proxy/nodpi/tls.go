@@ -61,8 +61,38 @@ func parseTLSHandshake(buf []byte) (TLSRecord, error) {
 }
 
 func (r *TLSRecord) SNI() string {
-	pos := 0
+	pos := 1 + 3 + 2 + 32
 	end := len(r.Body)
+
+	if pos > end-1 {
+		return ""
+	}
+	sessionIdSize := int(r.Body[pos])
+	pos += 1 + sessionIdSize
+
+	if pos > end-2 {
+		return ""
+	}
+	cipherSuiteSize := int(binary.BigEndian.Uint16(r.Body[pos : pos+2]))
+	pos += 2 + cipherSuiteSize
+
+	if pos > end-1 {
+		return ""
+	}
+	compressionTypeSize := int(r.Body[pos])
+	pos += 1 + compressionTypeSize
+
+	if pos > end-2 {
+		return ""
+	}
+	extensionsSize := int(binary.BigEndian.Uint16(r.Body[pos : pos+2]))
+	pos += 2
+
+	if pos+extensionsSize > end {
+		return ""
+	}
+	end = pos + extensionsSize
+
 	for pos+4 < end {
 		extType := binary.BigEndian.Uint16(r.Body[pos : pos+2])
 		extSize := int(binary.BigEndian.Uint16(r.Body[pos+2 : pos+4]))
