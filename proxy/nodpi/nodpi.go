@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"regexp"
 	"time"
 
 	core "github.com/v2fly/v2ray-core/v5"
@@ -159,13 +160,20 @@ func (h *Handler) performRequest(input buf.Reader, conn net.Conn, timer *signal.
 		tls, err = parseTLSHandshake(raw)
 	}
 	if err != nil {
-		newError("failed to parse TLS handshake").Base(err).WriteToLog()
+		newError("failed to parse TLS handshake").Base(err).AtInfo().WriteToLog()
 		conn.Write(raw)
 	} else {
 		if tls.Body[0] != 1 {
-			newError("this TLS is not a ClientHello - skipping").WriteToLog()
+			newError("this TLS is not a ClientHello - skipping").AtInfo().WriteToLog()
 			conn.Write(raw)
 		} else {
+			if h.config.GetSniFilters() != nil {
+				sni := tls.SNI()
+				if !h.filterSNI(sni) {
+					conn.Close()
+					return newError("blocked request by SNI: ", sni).AtInfo()
+				}
+			}
 			conn.Write(raw[:1])
 			time.Sleep(time.Millisecond * time.Duration(h.config.ChunkDelay))
 			raw = raw[1:]
@@ -183,4 +191,28 @@ func (h *Handler) performRequest(input buf.Reader, conn net.Conn, timer *signal.
 		return newError("failed to process request").Base(err)
 	}
 	return nil
+}
+
+func (h *Handler) filterSNI(sni string) bool {
+	for _, v := range h.config.GetSniFilters().GetWhitelist() {
+		re, err := regexp.Compile(v)
+		if err != nil {
+			newError("this TLS is not a ClientHello - skipping").AtWarning().WriteToLog()
+			continue
+		}
+		if !re.MatchString(sni) {
+			return false
+		}
+	}
+	for _, v := range h.config.GetSniFilters().GetBlacklist() {
+		re, err := regexp.Compile(v)
+		if err != nil {
+			newError("this TLS is not a ClientHello - skipping").AtWarning().WriteToLog()
+			continue
+		}
+		if re.MatchString(sni) {
+			return false
+		}
+	}
+	return true
 }
