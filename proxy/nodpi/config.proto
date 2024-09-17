@@ -9,8 +9,9 @@ option java_multiple_files = true;
 import "common/protoext/extensions.proto";
 
 message SNIFilters {
-  repeated string whitelist = 1;
-  repeated string blacklist = 2;
+  optional bool adaptive_mode = 1;
+  repeated string whitelist = 2;
+  repeated string blacklist = 3;
 }
 
 message Config {
