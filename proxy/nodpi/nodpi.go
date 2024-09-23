@@ -93,7 +93,7 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 		if err != nil {
 			return err
 		}
-		if h.config.GetSniFilters() != nil && h.config.GetSniFilters().GetAdaptiveMode() {
+		if h.config.GetSniFilters().GetAdaptiveMode() {
 			conn = h.blockPredictor.NewReporter(rawConn)
 		} else {
 			conn = DummyReporter(rawConn)
@@ -105,7 +105,7 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 	}
 	defer conn.Close()
 
-	timeoutDuration := time.Second * 5
+	timeoutDuration := time.Second * 30
 	ctx, cancel := context.WithCancel(ctx)
 	timer := signal.CancelAfterInactivity(ctx, cancel, timeoutDuration)
 

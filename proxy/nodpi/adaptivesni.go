@@ -1,12 +1,16 @@
 package nodpi
 
 import (
+	"os"
+	"regexp"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/v2fly/v2ray-core/v5/common/dice"
 	"github.com/v2fly/v2ray-core/v5/transport/internet"
+	"golang.org/x/exp/maps"
 )
 
 type stats struct {
@@ -41,6 +45,25 @@ func (p *BlockPredictor) NewReporter(conn internet.Connection) *ConnSentinel {
 
 func (p *BlockPredictor) runBackground() {
 	var iter uint64 = 0
+	cachePath := os.Getenv("SNI_CACHE_PATH")
+	if cachePath != "" {
+		emptyReg := regexp.MustCompile(`^[^\s]+$`)
+		p.mux.Lock()
+		content, err := os.ReadFile(cachePath)
+		if err != nil {
+			newError("failed to read cache for adaptive SNI algorithm from path", cachePath, err).AtError().WriteToLog()
+		} else {
+			lines := strings.Split(string(content), "\n")
+			for _, line := range lines {
+				if emptyReg.MatchString(line) {
+					p.allow[line] = struct{}{}
+				} else {
+					newError("skipping invalid cache entry", line).AtWarning().WriteToLog()
+				}
+			}
+		}
+		p.mux.Unlock()
+	}
 	for {
 		time.Sleep(time.Minute * 15)
 		iter++
@@ -60,6 +83,19 @@ func (p *BlockPredictor) runBackground() {
 			}
 		}
 		p.mux.Unlock()
+		if cachePath != "" {
+			text := strings.Join(maps.Keys(p.allow), "\n")
+			f, err := os.Create(cachePath)
+			if err != nil {
+				newError("failed to write adaptive SNI algorithm cache to file", cachePath, err).AtError().WriteToLog()
+			} else {
+				_, err := f.WriteString(text)
+				if err != nil {
+					newError("failed to write adaptive SNI algorithm cache to file", cachePath, err).AtError().WriteToLog()
+				}
+				f.Close()
+			}
+		}
 	}
 }
 
@@ -108,7 +144,7 @@ func (p *BlockPredictor) PredictAllow(s *ConnSentinel) bool {
 	attempts := st.requests.Load()
 	fails := st.failures.Load()
 	if attempts > 2 && fails > attempts/2 {
-		if dice.RollUint64()%attempts > 3 {
+		if dice.RollUint64()%attempts > 0 {
 			s.MarkCanceled()
 			return true
 		}
