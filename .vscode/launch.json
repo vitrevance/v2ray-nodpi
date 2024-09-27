@@ -11,15 +11,17 @@
             "mode": "auto",
             "program": "${workspaceFolder}/main/main.go",
             "output": "${workspaceFolder}/build/debug",
-            "asRoot": true,
-            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}/build/",
             "args": [
                 "run",
                 "--config",
                 "${workspaceFolder}/.vscode/sample_config.json",
                 "-format",
                 "jsonv5"
-            ]
+            ],
+            "env": {
+                "SNI_CACHE_PATH": "./sni_cache.txt"
+            }
         }
     ]
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"regexp"
 	"time"
 
 	core "github.com/v2fly/v2ray-core/v5"
@@ -37,15 +38,20 @@ func init() {
 }
 
 type Handler struct {
-	policyManager policy.Manager
-	dns           dns.Client
-	config        *Config
+	policyManager  policy.Manager
+	dns            dns.Client
+	config         *Config
+	blockPredictor *BlockPredictor
 }
 
 func (h *Handler) Init(config *Config, pm policy.Manager, d dns.Client) error {
 	h.config = config
 	h.policyManager = pm
 	h.dns = d
+
+	if config.GetSniFilters().GetAdaptiveMode() {
+		h.blockPredictor = NewBlockPredictor()
+	}
 
 	return nil
 }
@@ -81,7 +87,7 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 	input := link.Reader
 	output := link.Writer
 
-	var conn internet.Connection
+	var conn *ConnSentinel
 	err := retry.ExponentialBackoff(5, 100).On(func() error {
 		var rawConn internet.Connection
 		var err error
@@ -89,7 +95,11 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 		if err != nil {
 			return err
 		}
-		conn = rawConn
+		if h.config.GetSniFilters().GetAdaptiveMode() {
+			conn = h.blockPredictor.NewReporter(rawConn)
+		} else {
+			conn = DummyReporter(rawConn)
+		}
 		return nil
 	})
 	if err != nil {
@@ -97,7 +107,7 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 	}
 	defer conn.Close()
 
-	timeoutDuration := time.Second * 5
+	timeoutDuration := time.Second * 30
 	ctx, cancel := context.WithCancel(ctx)
 	timer := signal.CancelAfterInactivity(ctx, cancel, timeoutDuration)
 
@@ -131,6 +141,7 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 			reader = buf.NewPacketReader(conn)
 		}
 		if err := buf.Copy(reader, output, buf.UpdateActivity(timer)); err != nil {
+			conn.ReportFailure()
 			return newError("failed to process response").Base(err)
 		}
 
@@ -145,7 +156,7 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 	return nil
 }
 
-func (h *Handler) performRequest(input buf.Reader, conn net.Conn, timer *signal.ActivityTimer) error {
+func (h *Handler) performRequest(input buf.Reader, conn *ConnSentinel, timer *signal.ActivityTimer) error {
 	var err error = ReadMore
 	var tls TLSRecord
 	var raw []byte
@@ -159,13 +170,24 @@ func (h *Handler) performRequest(input buf.Reader, conn net.Conn, timer *signal.
 		tls, err = parseTLSHandshake(raw)
 	}
 	if err != nil {
-		newError("failed to parse TLS handshake").Base(err).WriteToLog()
+		newError("failed to parse TLS handshake").Base(err).AtInfo().WriteToLog()
 		conn.Write(raw)
 	} else {
 		if tls.Body[0] != 1 {
-			newError("this TLS is not a ClientHello - skipping").WriteToLog()
+			newError("this TLS is not a ClientHello - skipping").AtInfo().WriteToLog()
 			conn.Write(raw)
 		} else {
+			if h.config.GetSniFilters() != nil {
+				sni := tls.SNI()
+				conn.ReportSNI(sni)
+				if !h.filterSNI(conn) {
+					conn.Write(raw)
+					if err := buf.Copy(input, buf.NewWriter(conn), buf.UpdateActivity(timer)); err != nil {
+						return newError("failed to process request").Base(err)
+					}
+					return nil
+				}
+			}
 			conn.Write(raw[:1])
 			time.Sleep(time.Millisecond * time.Duration(h.config.ChunkDelay))
 			raw = raw[1:]
@@ -183,4 +205,33 @@ func (h *Handler) performRequest(input buf.Reader, conn net.Conn, timer *signal.
 		return newError("failed to process request").Base(err)
 	}
 	return nil
+}
+
+func (h *Handler) filterSNI(s *ConnSentinel) (allow bool) {
+	sni := s.GetSNI()
+	allow = len(h.config.GetSniFilters().GetWhitelist()) == 0 && !h.config.GetSniFilters().GetAdaptiveMode()
+	for _, v := range h.config.GetSniFilters().GetWhitelist() {
+		re, err := regexp.Compile(v)
+		if err != nil {
+			newError("invalid regex: ", v).AtWarning().WriteToLog()
+			continue
+		}
+		if re.MatchString(sni) {
+			allow = true
+		}
+	}
+	if !allow && h.config.GetSniFilters().GetAdaptiveMode() {
+		allow = h.blockPredictor.PredictAllow(s)
+	}
+	for _, v := range h.config.GetSniFilters().GetBlacklist() {
+		re, err := regexp.Compile(v)
+		if err != nil {
+			newError("invalid regex: ", v).AtWarning().WriteToLog()
+			continue
+		}
+		if re.MatchString(sni) {
+			allow = false
+		}
+	}
+	return
 }

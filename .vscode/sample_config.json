@@ -21,7 +21,7 @@
         },
         {
             "protocol": "socks",
-            "port": 30001,
+            "port": 30000,
             "settings": {
                 "udp_enabled": false,
                 "address": null
@@ -33,7 +33,16 @@
             "protocol": "nodpi",
             "settings": {
                 "chunk_size": 8,
-                "chunk_delay": 45
+                "chunk_delay": 45,
+                "sni_filters": {
+                    "adaptive_mode": true,
+                    "whitelist": [
+                        "youtube\\.comm",
+                        "googleapis\\.comm",
+                        "googlevideo\\.comm",
+                        "twitterm"
+                    ]
+                }
             }
         }
     ]

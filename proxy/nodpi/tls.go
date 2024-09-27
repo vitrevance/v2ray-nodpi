@@ -59,3 +59,72 @@ func parseTLSHandshake(buf []byte) (TLSRecord, error) {
 		Body: buf[5 : size+5],
 	}, nil
 }
+
+func (r *TLSRecord) SNI() string {
+	pos := 1 + 3 + 2 + 32
+	end := len(r.Body)
+
+	if pos > end-1 {
+		return ""
+	}
+	sessionIdSize := int(r.Body[pos])
+	pos += 1 + sessionIdSize
+
+	if pos > end-2 {
+		return ""
+	}
+	cipherSuiteSize := int(binary.BigEndian.Uint16(r.Body[pos : pos+2]))
+	pos += 2 + cipherSuiteSize
+
+	if pos > end-1 {
+		return ""
+	}
+	compressionTypeSize := int(r.Body[pos])
+	pos += 1 + compressionTypeSize
+
+	if pos > end-2 {
+		return ""
+	}
+	extensionsSize := int(binary.BigEndian.Uint16(r.Body[pos : pos+2]))
+	pos += 2
+
+	if pos+extensionsSize > end {
+		return ""
+	}
+	end = pos + extensionsSize
+
+	for pos+4 < end {
+		extType := binary.BigEndian.Uint16(r.Body[pos : pos+2])
+		extSize := int(binary.BigEndian.Uint16(r.Body[pos+2 : pos+4]))
+		pos += 4
+		if extType == 0 {
+			if pos > end-2 {
+				return ""
+			}
+			namesLength := int(binary.BigEndian.Uint16(r.Body[pos : pos+2]))
+			pos += 2
+
+			// iterate over name list
+			n := pos
+			pos += namesLength
+			if pos > end {
+				return ""
+			}
+			for n < pos-3 {
+				nameType := r.Body[n]
+				nameSize := int(binary.BigEndian.Uint16(r.Body[n+1 : n+3]))
+				n += 3
+
+				if nameType == 0 {
+					if n+nameSize > end {
+						return ""
+					}
+					return string(r.Body[n : n+nameSize])
+				}
+			}
+		} else {
+			pos += extSize
+		}
+	}
+	return ""
+}

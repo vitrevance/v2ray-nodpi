@@ -8,10 +8,17 @@ option java_multiple_files = true;
 
 import "common/protoext/extensions.proto";
 
+message SNIFilters {
+  optional bool adaptive_mode = 1;
+  repeated string whitelist = 2;
+  repeated string blacklist = 3;
+}
+
 message Config {
   option (v2ray.core.common.protoext.message_opt).type = "outbound";
   option (v2ray.core.common.protoext.message_opt).short_name = "nodpi";
 
   uint32 chunk_size = 1;
   uint32 chunk_delay = 2;
+  optional SNIFilters sni_filters = 3;
 }

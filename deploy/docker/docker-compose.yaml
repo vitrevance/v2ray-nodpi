@@ -1,5 +1,5 @@
 services:
-  v2ray-server:
+  v2ray-nodpi:
     build:
       context: ../../
       dockerfile: ./deploy/docker/Dockerfile
