@@ -49,7 +49,9 @@ func (h *Handler) Init(config *Config, pm policy.Manager, d dns.Client) error {
 	h.policyManager = pm
 	h.dns = d
 
-	h.blockPredictor = NewBlockPredictor()
+	if config.GetSniFilters().GetAdaptiveMode() {
+		h.blockPredictor = NewBlockPredictor()
+	}
 
 	return nil
 }
