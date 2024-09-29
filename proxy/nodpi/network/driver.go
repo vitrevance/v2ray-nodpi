@@ -1,6 +1,7 @@
 package network
 
 import (
+	"io"
 	"net"
 
 	"github.com/mdlayher/packet"
@@ -39,3 +40,13 @@ func NewDriver() (*Driver, error) {
 func (d *Driver) Close() error {
 	return d.conn.Close()
 }
+
+func (d *Driver) Write(b []byte) (int, error) {
+	panic("not implemented")
+}
+
+func (d *Driver) Read(buf []byte) (int, error) {
+	panic("not implemented")
+}
+
+var _ io.ReadWriteCloser = (*Driver)(nil)
