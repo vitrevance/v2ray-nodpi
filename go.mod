@@ -35,6 +35,7 @@ require (
 	github.com/v2fly/VSign v0.0.0-20201108000810-e2adc24bf848 // indirect
 	github.com/v2fly/ss-bloomring v0.0.0-20210312155135-28617310f63e // indirect
 	github.com/vincent-petithory/dataurl v1.0.0 // indirect
+	github.com/vishvananda/netns v0.0.4 // indirect
 	github.com/xiaokangwang/VLite v0.0.0-20220418190619-cff95160a432 // indirect
 	go.starlark.net v0.0.0-20231101134539-556fd59b42f6 // indirect
 	go4.org/netipx v0.0.0-20230303233057-f1b76eb4bb35 // indirect
@@ -76,7 +77,9 @@ require (
 	github.com/pion/sctp v1.8.7 // indirect
 	github.com/riobard/go-bloom v0.0.0-20200614022211-cdc8013cb5b3 // indirect
 	github.com/secure-io/siv-go v0.0.0-20180922214919-5ff40651e2c4 // indirect
+	github.com/smallnest/ringbuffer v0.0.0-20240827114233-62e3c686e6c0
 	github.com/v2fly/v2ray-core/v5 v5.16.1
+	github.com/vishvananda/netlink v1.3.0
 	github.com/xtaci/smux v1.5.24 // indirect
 	go.uber.org/mock v0.4.0 // indirect
 	golang.org/x/exp v0.0.0-20230725093048-515e97ebf090

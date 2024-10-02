@@ -1,5 +1,6 @@
 {
     "go.alternateTools": {
+        "dlv": "~/go/bin/sudodlv",
         "go": "/usr/local/go/bin/sudogo"
     },
 }
