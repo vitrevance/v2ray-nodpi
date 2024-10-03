@@ -42,6 +42,7 @@ type Handler struct {
 	dns            dns.Client
 	config         *Config
 	blockPredictor *BlockPredictor
+	dialer         TCPDialer
 }
 
 func (h *Handler) Init(config *Config, pm policy.Manager, d dns.Client) error {
@@ -51,6 +52,11 @@ func (h *Handler) Init(config *Config, pm policy.Manager, d dns.Client) error {
 
 	if config.GetSniFilters().GetAdaptiveMode() {
 		h.blockPredictor = NewBlockPredictor()
+	}
+	var err error
+	h.dialer, err = NewTCPDialer()
+	if err != nil {
+		return newError("failed to use custom TCP satck").Base(err).AtError()
 	}
 
 	return nil
@@ -71,7 +77,11 @@ func (h *Handler) resolveIP(domain string) net.Address {
 	return net.IPAddress(ips[dice.Roll(len(ips))])
 }
 
-func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer internet.Dialer) error {
+func (h *Handler) Process(ctx context.Context, link *transport.Link, externalDialer internet.Dialer) error {
+	dialer := h.dialer
+	if dialer == nil {
+		dialer = WrapTCPDialer(externalDialer)
+	}
 	outbound := session.OutboundFromContext(ctx)
 	if outbound == nil || !outbound.Target.IsValid() {
 		return newError("target not specified.")
@@ -89,9 +99,9 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 
 	var conn *ConnSentinel
 	err := retry.ExponentialBackoff(5, 100).On(func() error {
-		var rawConn internet.Connection
+		var rawConn TCPConn
 		var err error
-		rawConn, err = dialer.Dial(ctx, destination)
+		rawConn, err = dialer.Dial(ctx, h.destinationToTCP(destination))
 		if err != nil {
 			return err
 		}
@@ -234,4 +244,25 @@ func (h *Handler) filterSNI(s *ConnSentinel) (allow bool) {
 		}
 	}
 	return
+}
+
+func (h *Handler) destinationToTCP(d net.Destination) *net.TCPAddr {
+	var ip net.IP
+	if d.Address.Family() == net.AddressFamilyDomain {
+		addr := h.resolveIP(d.Address.Domain())
+		if addr == nil {
+			newError("failed to resolve domain: ", d.String()).AtError().WriteToLog()
+			return nil
+		}
+		ip = addr.IP().To4()
+	} else if d.Address.Family() == net.AddressFamilyIPv4 {
+		ip = d.Address.IP().To4()
+	} else {
+		newError("failed to dial uinsupported destination: ", d.String()).AtError().WriteToLog()
+		return nil
+	}
+	return &net.TCPAddr{
+		IP:   ip,
+		Port: int(d.Port),
+	}
 }

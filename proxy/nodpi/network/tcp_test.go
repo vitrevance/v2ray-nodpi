@@ -12,9 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var httpGet = "GET / HTTP/1.1\nHost: 192.168.0.200\r\n\r\n"
-
 func TestTCP(t *testing.T) {
+	var httpGet = "GET / HTTP/1.1\r\nHost: 192.168.0.200\r\n\r\n"
 	d, err := NewDriver()
 	require.NoError(t, err)
 	defer d.Close()
@@ -63,4 +62,42 @@ func TestBuffer(t *testing.T) {
 	buf := make([]byte, 5)
 	n, _ := b.Read(buf)
 	require.Equal(t, 1, n)
+}
+
+func BenchmarkTCPDecoder(b *testing.B) {
+	var httpGet = "GET / HTTP/1.1\r\nHost: www.google.com\r\n\r\n"
+	d, err := NewDriver()
+	require.NoError(b, err)
+
+	tcp, err := NewTCP(d)
+	require.NoError(b, err)
+	defer tcp.Close()
+
+	wg := sync.WaitGroup{}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c, err := tcp.Dial(ctx, &net.TCPAddr{IP: net.IPv4(64, 233, 164, 105), Port: 80})
+			require.NoError(b, err)
+			defer c.Close()
+
+			_, err = c.Write([]byte(httpGet))
+			assert.NoError(b, err)
+
+			buf := make([]byte, 1024)
+			rd := 0
+			for err == nil {
+				n, rerr := c.Read(buf)
+				rd += n
+				err = rerr
+			}
+			assert.Greater(b, rd, 0, err)
+		}()
+	}
+	wg.Wait()
 }

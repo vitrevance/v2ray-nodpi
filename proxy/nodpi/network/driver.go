@@ -86,10 +86,10 @@ func NewDriver() (*Driver, error) {
 					errors = append(errors, newError("failed to add IP to interface").Base(err))
 				}
 			}
-			cmd := exec.Command("iptables", "-C", "INPUT", "-d", chosenIP.String(), "-j", "DROP")
+			cmd := exec.Command("iptables", "-C", "INPUT", "-d", chosenIP.String(), "-p", "tcp", "-j", "DROP")
 			err = cmd.Run()
 			if err != nil {
-				cmd := exec.Command("iptables", "-A", "INPUT", "-d", chosenIP.String(), "-j", "DROP")
+				cmd := exec.Command("iptables", "-A", "INPUT", "-d", chosenIP.String(), "-p", "tcp", "-j", "DROP")
 				err = cmd.Run()
 				if err != nil {
 					return nil, newError("failed to configure ip filters").Base(err)

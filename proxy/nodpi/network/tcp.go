@@ -2,6 +2,7 @@ package network
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"math/rand"
 	"net"
@@ -9,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bep/debounce"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/smallnest/ringbuffer"
@@ -26,6 +28,7 @@ type TCP struct {
 	ctx                     context.Context
 	cancel                  func()
 	serializationBufferPool sync.Pool
+	defaultWindow           uint16
 }
 
 func NewTCP(driver *Driver) (*TCP, error) {
@@ -36,7 +39,8 @@ func NewTCP(driver *Driver) (*TCP, error) {
 		serializationBufferPool: sync.Pool{New: func() any {
 			return gopacket.NewSerializeBuffer()
 		}},
-		localIP: driver.ip,
+		localIP:       driver.ip,
+		defaultWindow: 65535,
 	}
 
 	stack.pm.SetPortRange(50000, 60000)
@@ -54,15 +58,18 @@ func (d *TCP) Close() error {
 }
 
 func (d *TCP) Dial(ctx context.Context, addr *net.TCPAddr) (*conn, error) {
+	if addr == nil {
+		return nil, newError("address is nil")
+	}
 	p, terr := d.pm.ReservePort(d.rnd, ports.Reservation{}, nil)
 	if terr != nil {
 		return nil, newError("failed to bind to port: ", terr)
 	}
 	c := &conn{
 		stack:       d,
-		readBuffer:  ringbuffer.New(8192).SetBlocking(true),
-		writeBuffer: ringbuffer.New(8192).SetBlocking(true),
-		windowSize:  8192,
+		readBuffer:  ringbuffer.New(int(d.defaultWindow)).SetBlocking(true),
+		writeBuffer: ringbuffer.New(int(d.defaultWindow)).SetBlocking(true),
+		windowSize:  d.defaultWindow,
 		seq:         d.rnd.Uint32(),
 		localAddr:   &net.TCPAddr{IP: d.localIP, Port: int(p)},
 		remoteAddr:  addr,
@@ -87,17 +94,18 @@ func (d *TCP) Dial(ctx context.Context, addr *net.TCPAddr) (*conn, error) {
 func (d *TCP) recv() {
 	maxRetryDelay := time.Second * 30
 	retryDelay := time.Millisecond
-	buf := make([]byte, d.driver.iface.MTU)
+	etherBuf := make([]byte, 8192)
 	var ip4 layers.IPv4
 	var tcp layers.TCP
 	decoder := gopacket.NewDecodingLayerParser(layers.LayerTypeIPv4, &ip4, &tcp)
 	decoded := []gopacket.LayerType{}
+
 	for {
 		select {
 		case <-d.ctx.Done():
 			return
 		default:
-			_, err := d.driver.Read(buf)
+			rdSize, err := d.driver.Read(etherBuf)
 			if err != nil && d.ctx.Err() == nil {
 				newError("tcp recv driver failed").Base(err).AtError().WriteToLog()
 				time.Sleep(retryDelay)
@@ -109,13 +117,18 @@ func (d *TCP) recv() {
 			} else {
 				retryDelay = time.Millisecond
 			}
+			buf := etherBuf[:rdSize]
 			err = decoder.DecodeLayers(buf, &decoded)
-			if len(decoded) != 2 {
+			if len(decoded) == 0 {
 				newError("received invalid packet").Base(err).AtDebug().WriteToLog()
 				continue
 			}
 			if !ip4.DstIP.Equal(d.localIP) {
 				newError("received packet for unknown ip: ", ip4.DstIP.String()).AtDebug().WriteToLog()
+				continue
+			}
+			if len(decoded) != 2 {
+				newError("received invalid packet").Base(err).AtWarning().WriteToLog()
 				continue
 			}
 			if (ip4.Flags & layers.IPv4MoreFragments) != 0 {
@@ -154,7 +167,10 @@ type conn struct {
 	mux sync.Mutex
 	seq uint32
 	ack uint32
+	mss uint16
 	fin bool
+
+	inAck uint32
 }
 
 // Close implements net.Conn.
@@ -176,7 +192,8 @@ func (c *conn) LocalAddr() net.Addr {
 
 // Read implements net.Conn.
 func (c *conn) Read(b []byte) (n int, err error) {
-	return c.readBuffer.Read(b)
+	n, err = c.readBuffer.Read(b)
+	return
 }
 
 // RemoteAddr implements net.Conn.
@@ -201,13 +218,18 @@ func (c *conn) SetWriteDeadline(t time.Time) error {
 
 // Write implements net.Conn.
 func (c *conn) Write(b []byte) (n int, err error) {
-	return c.writeBuffer.Write(b)
+	n, err = c.writeBuffer.Write(b)
+	return
 }
+
+var errOutOfOrder error = errors.New("out of order")
+var errConnectionClosed error = errors.New("closed")
+var errFinished error = errors.New("finished")
 
 func (c *conn) background(ctx context.Context, driverInput <-chan []byte) {
 	defer c.Close()
 
-	timeoutDuration := time.Second * 30
+	timeoutDuration := time.Second * 15
 	ctx, cancel := context.WithCancel(ctx)
 	timer := signal.CancelAfterInactivity(ctx, cancel, timeoutDuration)
 	defer cancel()
@@ -222,18 +244,90 @@ func (c *conn) background(ctx context.Context, driverInput <-chan []byte) {
 		var tcpIn layers.TCP
 		decoder := gopacket.NewDecodingLayerParser(layers.LayerTypeTCP, &tcpIn)
 		decoded := []gopacket.LayerType{}
+		type orderedBuffer struct {
+			seq uint32
+			buf []byte
+		}
+		waitlist := make([]orderedBuffer, 0)
+
+		debouncer := debounce.New(time.Millisecond * 150)
+		debounceAck := func(seq, ack uint32) {
+			debouncer(func() {
+				timer.Update()
+				c.sendAck(seq, ack)
+			})
+		}
+
+		handleIncoming := func(tcpIn *layers.TCP) error {
+			c.mux.Lock()
+			defer c.mux.Unlock()
+			if tcpIn.Seq > c.ack {
+				// newError("skipping packet, SEQ: ", tcpIn.Seq-c.inAck, " ACK: ", c.ack-c.inAck).AtDebug().WriteToLog()
+				// debounceAck(c.seq, c.ack)
+				c.sendAck(c.seq, c.ack)
+				return errOutOfOrder
+			}
+			if tcpIn.Seq < c.ack && uint32(len(tcpIn.Payload))+tcpIn.Seq > c.ack {
+				tcpIn.Payload = tcpIn.Payload[c.ack-tcpIn.Seq:]
+				tcpIn.Seq = c.ack
+			}
+			if tcpIn.Seq != c.ack {
+				return nil
+			}
+			nWritten, _ := c.readBuffer.Write(tcpIn.Payload)
+			timer.Update()
+			if tcpIn.RST {
+				err := errConnectionClosed
+				c.writeBuffer.CloseWithError(err)
+				return err
+			}
+			if tcpIn.FIN && !c.fin {
+				c.fin = true
+				nWritten++
+				c.readBuffer.CloseWriter()
+			}
+			c.ack += uint32(nWritten)
+			if nWritten > 0 || tcpIn.FIN {
+				debounceAck(c.seq, c.ack)
+			}
+			if !tcpIn.FIN && tcpIn.ACK && c.fin {
+				return errFinished
+			}
+			return nil
+		}
+
+		defer c.readBuffer.CloseWriter()
 		for {
 			buf, err := readOrTimeout(driverInput, ctx)
 			if err != nil {
 				return
 			}
-			timer.Update()
 			decoder.DecodeLayers(buf, &decoded)
 			if len(decoded) != 1 {
 				panic("must be already parsed")
 			}
-			err = c.handleIncoming(&tcpIn)
-			if err != nil {
+			waitlist = append(waitlist, orderedBuffer{
+				seq: tcpIn.Seq,
+				buf: buf,
+			})
+			slices.SortFunc(waitlist, func(a, b orderedBuffer) int {
+				if a.seq == b.seq {
+					return 0
+				}
+				if a.seq > b.seq {
+					return -1
+				}
+				return 1
+			})
+			for err == nil && len(waitlist) > 0 {
+				decoder.DecodeLayers(waitlist[len(waitlist)-1].buf, &decoded)
+				err = handleIncoming(&tcpIn)
+				if err == nil {
+					waitlist = waitlist[:len(waitlist)-1]
+				}
+			}
+			// newError("holding back ", len(waitlist), " packets").AtDebug().WriteToLog()
+			if err != nil && err != errOutOfOrder {
 				return
 			}
 		}
@@ -250,7 +344,11 @@ func (c *conn) background(ctx context.Context, driverInput <-chan []byte) {
 			c.seq++
 		}()
 
-		sendBuffer := make([]byte, c.windowSize)
+		bufferSize := uint16(c.stack.driver.iface.MTU) - 64
+		if c.mss > 0 {
+			bufferSize = min(c.mss, bufferSize)
+		}
+		sendBuffer := make([]byte, bufferSize)
 
 		for {
 			n, err := c.writeBuffer.Read(sendBuffer)
@@ -262,37 +360,13 @@ func (c *conn) background(ctx context.Context, driverInput <-chan []byte) {
 			ack := c.ack
 			c.seq += uint32(n)
 			c.mux.Unlock()
-			c.sendData(seq, ack, sendBuffer[:n])
+			err = c.sendData(seq, ack, sendBuffer[:n])
+			if err != nil {
+				newError("failed to send segment").Base(err).AtError().WriteToLog()
+			}
+			timer.Update()
 		}
 	}()
-}
-
-func (c *conn) handleIncoming(tcpIn *layers.TCP) error {
-	c.mux.Lock()
-	defer c.mux.Unlock()
-	if tcpIn.Seq != c.ack {
-		newError("skipping packet").AtDebug().WriteToLog()
-		return nil
-	}
-	nWritten, _ := c.readBuffer.Write(tcpIn.Payload)
-	if tcpIn.RST {
-		err := errors.New("connection reset")
-		c.writeBuffer.CloseWithError(err)
-		return err
-	}
-	if tcpIn.FIN && !c.fin {
-		c.fin = true
-		nWritten++
-		c.readBuffer.CloseWriter()
-	}
-	c.ack += uint32(nWritten)
-	if nWritten > 0 || tcpIn.FIN {
-		return c.sendAck(c.seq, c.ack)
-	}
-	if !tcpIn.FIN && tcpIn.ACK && c.fin {
-		return newError("finished")
-	}
-	return nil
 }
 
 func (c *conn) handshake(driverInput <-chan []byte, ctx context.Context) error {
@@ -346,6 +420,12 @@ func (c *conn) handshake(driverInput <-chan []byte, ctx context.Context) error {
 	}
 	c.ack = tcpIn.Seq + 1
 	c.seq = tcpIn.Ack
+	c.inAck = c.ack
+	for _, opt := range tcpIn.Options {
+		if opt.OptionType == layers.TCPOptionKindMSS {
+			c.mss = binary.BigEndian.Uint16(opt.OptionData)
+		}
+	}
 
 	// ACK
 	tcpOut = layers.TCP{}
@@ -356,6 +436,7 @@ func (c *conn) handshake(driverInput <-chan []byte, ctx context.Context) error {
 	tcpOut.Window = c.windowSize
 	tcpOut.SrcPort = layers.TCPPort(c.localAddr.Port)
 	tcpOut.DstPort = layers.TCPPort(c.remoteAddr.Port)
+	tcpOut.Options = tcpIn.Options
 	err = gopacket.SerializeLayers(serialBuffer, opts, &ip4, &tcpOut)
 	if err != nil {
 		return newError("tcp handshake failed").Base(err)
@@ -368,42 +449,29 @@ func (c *conn) handshake(driverInput <-chan []byte, ctx context.Context) error {
 }
 
 func (c *conn) sendAck(seq, ack uint32) error {
-	tcpOut := layers.TCP{
-		SrcPort: layers.TCPPort(c.localAddr.Port),
-		DstPort: layers.TCPPort(c.remoteAddr.Port),
-		Seq:     seq,
-		Ack:     ack,
-		ACK:     true,
-		Window:  uint16(c.readBuffer.Free()),
-	}
-	return c.sendTCP(&tcpOut, nil)
-}
-
-func (c *conn) sendData(seq, ack uint32, data []byte) error {
-	tcpOut := layers.TCP{
-		SrcPort: layers.TCPPort(c.localAddr.Port),
-		DstPort: layers.TCPPort(c.remoteAddr.Port),
-		Seq:     seq,
-		Ack:     ack,
-		ACK:     true,
-		PSH:     true,
-		Window:  uint16(c.readBuffer.Free()),
-	}
-	return c.sendTCP(&tcpOut, data)
+	return c.sendFilled(seq, ack, false, false, nil)
 }
 
 func (c *conn) sendFin(seq, ack uint32) error {
+	return c.sendFilled(seq, ack, false, true, nil)
+}
+
+func (c *conn) sendData(seq, ack uint32, data []byte) error {
+	return c.sendFilled(seq, ack, true, false, data)
+}
+
+func (c *conn) sendFilled(seq, ack uint32, push, fin bool, data []byte) error {
 	tcpOut := layers.TCP{
 		SrcPort: layers.TCPPort(c.localAddr.Port),
 		DstPort: layers.TCPPort(c.remoteAddr.Port),
 		Seq:     seq,
 		Ack:     ack,
-		FIN:     true,
-		PSH:     false,
 		ACK:     true,
+		PSH:     push,
+		FIN:     fin,
 		Window:  uint16(c.readBuffer.Free()),
 	}
-	return c.sendTCP(&tcpOut, nil)
+	return c.sendTCP(&tcpOut, data)
 }
 
 func (c *conn) Send(opts gopacket.SerializeOptions, ls ...gopacket.SerializableLayer) error {
@@ -439,7 +507,7 @@ func readOrTimeout[T any](ch <-chan T, ctx context.Context) (T, error) {
 	select {
 	case value, ok := <-ch:
 		if !ok {
-			return value, newError("closed")
+			return value, errConnectionClosed
 		}
 		return value, nil
 	case <-ctx.Done():

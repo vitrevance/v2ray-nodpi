@@ -32,17 +32,8 @@
         {
             "protocol": "nodpi",
             "settings": {
-                "chunk_size": 8,
-                "chunk_delay": 45,
-                "sni_filters": {
-                    "adaptive_mode": true,
-                    "whitelist": [
-                        "youtube\\.comm",
-                        "googleapis\\.comm",
-                        "googlevideo\\.comm",
-                        "twitterm"
-                    ]
-                }
+                "chunk_size": 99999,
+                "chunk_delay": 0
             }
         }
     ]
