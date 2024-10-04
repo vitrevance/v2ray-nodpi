@@ -82,6 +82,7 @@ func (d *TCP) Dial(ctx context.Context, addr *net.TCPAddr) (*RawConn, error) {
 	// handshake
 	err := c.handshake(driverChan, ctx)
 	if err != nil {
+		c.sendRst(c.seq, c.ack)
 		c.Close()
 		return nil, newError("handshake failed").Base(err)
 	}
@@ -395,6 +396,14 @@ func (c *RawConn) handshake(driverInput <-chan []byte, ctx context.Context) erro
 	tcpOut.Window = c.windowSize
 	tcpOut.SrcPort = layers.TCPPort(c.localAddr.Port)
 	tcpOut.DstPort = layers.TCPPort(c.remoteAddr.Port)
+	var maxMSS uint16 = uint16(c.stack.driver.iface.MTU) - 64
+	tcpOut.Options = []layers.TCPOption{
+		{
+			OptionType:   layers.TCPOptionKindMSS,
+			OptionLength: 2,
+			OptionData:   []byte{byte(maxMSS >> 8), byte(maxMSS)},
+		},
+	}
 	err := gopacket.SerializeLayers(serialBuffer, opts, &ip4, &tcpOut)
 	if err != nil {
 		return newError("tcp handshake failed").Base(err)
@@ -436,7 +445,6 @@ func (c *RawConn) handshake(driverInput <-chan []byte, ctx context.Context) erro
 	tcpOut.Window = c.windowSize
 	tcpOut.SrcPort = layers.TCPPort(c.localAddr.Port)
 	tcpOut.DstPort = layers.TCPPort(c.remoteAddr.Port)
-	tcpOut.Options = tcpIn.Options
 	err = gopacket.SerializeLayers(serialBuffer, opts, &ip4, &tcpOut)
 	if err != nil {
 		return newError("tcp handshake failed").Base(err)
@@ -449,18 +457,22 @@ func (c *RawConn) handshake(driverInput <-chan []byte, ctx context.Context) erro
 }
 
 func (c *RawConn) sendAck(seq, ack uint32) error {
-	return c.sendFilled(seq, ack, false, false, nil)
+	return c.sendFilled(seq, ack, false, false, false, nil)
 }
 
 func (c *RawConn) sendFin(seq, ack uint32) error {
-	return c.sendFilled(seq, ack, false, true, nil)
+	return c.sendFilled(seq, ack, false, true, false, nil)
 }
 
 func (c *RawConn) sendData(seq, ack uint32, data []byte) error {
-	return c.sendFilled(seq, ack, true, false, data)
+	return c.sendFilled(seq, ack, true, false, false, data)
 }
 
-func (c *RawConn) sendFilled(seq, ack uint32, push, fin bool, data []byte) error {
+func (c *RawConn) sendRst(seq, ack uint32) error {
+	return c.sendFilled(seq, ack, true, false, true, nil)
+}
+
+func (c *RawConn) sendFilled(seq, ack uint32, push, fin, rst bool, data []byte) error {
 	tcpOut := layers.TCP{
 		SrcPort: layers.TCPPort(c.localAddr.Port),
 		DstPort: layers.TCPPort(c.remoteAddr.Port),
@@ -469,6 +481,7 @@ func (c *RawConn) sendFilled(seq, ack uint32, push, fin bool, data []byte) error
 		ACK:     true,
 		PSH:     push,
 		FIN:     fin,
+		RST:     rst,
 		Window:  uint16(c.readBuffer.Free()),
 	}
 	return c.sendTCP(&tcpOut, data)
@@ -508,7 +521,7 @@ func (c *RawConn) SendWithOpts(payload []byte, opts ...func(*layers.IPv4, *layer
 	defer c.mux.Unlock()
 	ip4 := layers.IPv4{
 		Version:  4,
-		TTL:      64,
+		TTL:      32,
 		SrcIP:    c.localAddr.IP,
 		DstIP:    c.remoteAddr.IP,
 		Protocol: layers.IPProtocolTCP,

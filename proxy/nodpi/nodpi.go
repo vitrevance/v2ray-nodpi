@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/google/gopacket/layers"
 	core "github.com/v2fly/v2ray-core/v5"
 	"github.com/v2fly/v2ray-core/v5/common"
 	"github.com/v2fly/v2ray-core/v5/common/buf"
@@ -63,6 +64,9 @@ func (h *Handler) Init(config *Config, pm policy.Manager, d dns.Client) error {
 }
 
 func (h *Handler) resolveIP(domain string) net.Address {
+	// if strings.Contains(domain, ".googlevideo.com") || strings.Contains(domain, "youtube.com") || strings.Contains(domain, ".gstatic.com") {
+	// 	return net.IPAddress([]byte{74, 125, 99, 7})
+	// }
 	ips, err := dns.LookupIPWithOption(h.dns, domain, dns.IPOption{
 		IPv4Enable: true,
 		IPv6Enable: false,
@@ -187,9 +191,12 @@ func (h *Handler) performRequest(input buf.Reader, conn *ConnSentinel, timer *si
 			newError("this TLS is not a ClientHello - skipping").AtInfo().WriteToLog()
 			conn.Write(raw)
 		} else {
-			if h.config.GetSniFilters() != nil {
-				sni := tls.SNI()
+			var sni string
+			if h.config.GetSniFilters() != nil || h.config.GetIspTtl() > 0 {
+				sni = tls.SNI()
 				conn.ReportSNI(sni)
+			}
+			if h.config.GetSniFilters() != nil {
 				if !h.filterSNI(conn) {
 					conn.Write(raw)
 					if err := buf.Copy(input, buf.NewWriter(conn), buf.UpdateActivity(timer)); err != nil {
@@ -198,17 +205,36 @@ func (h *Handler) performRequest(input buf.Reader, conn *ConnSentinel, timer *si
 					return nil
 				}
 			}
-			sendFakeTLS(conn.Conn, uint8(h.config.GetIspTtl()))
-			conn.Write(raw[:1])
-			time.Sleep(time.Millisecond * time.Duration(h.config.ChunkDelay))
-			raw = raw[1:]
-			if h.config.ChunkSize > 0 {
-				for uint32(len(raw)) > h.config.ChunkSize {
-					conn.Write(raw[:h.config.ChunkSize])
-					raw = raw[h.config.ChunkSize:]
+			if h.config.GetIspTtl() == 0 {
+				conn.Write(raw[:1])
+				time.Sleep(time.Millisecond * time.Duration(h.config.ChunkDelay))
+				raw = raw[1:]
+				if h.config.ChunkSize > 0 {
+					for uint32(len(raw)) > h.config.ChunkSize {
+						conn.Write(raw[:h.config.ChunkSize])
+						raw = raw[h.config.ChunkSize:]
+					}
 				}
+				conn.Write(raw)
+			} else {
+				ttl := uint8(h.config.GetIspTtl())
+				buf := "hjksdfgkljsdfgklgafdljkbh"
+				seq := uint32(0)
+				conn.Conn.SendWithOpts([]byte(buf), func(i *layers.IPv4, t *layers.TCP) error {
+					i.TTL = ttl
+					seq = t.Seq
+					return nil
+				})
+				for i := 0; i < 20; i++ {
+					seq += uint32(len(buf))
+					conn.Conn.SendWithOpts([]byte(buf), func(i *layers.IPv4, t *layers.TCP) error {
+						i.TTL = ttl
+						t.Seq = seq
+						return nil
+					})
+				}
+				conn.Write(raw)
 			}
-			conn.Write(raw)
 		}
 	}
 

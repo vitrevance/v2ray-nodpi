@@ -34,7 +34,7 @@
             "settings": {
                 "chunk_size": 99999,
                 "chunk_delay": 0,
-                "isp_ttl": 10
+                "isp_ttl": 7
             }
         }
     ]
