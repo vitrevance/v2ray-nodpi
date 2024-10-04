@@ -33,7 +33,8 @@
             "protocol": "nodpi",
             "settings": {
                 "chunk_size": 99999,
-                "chunk_delay": 0
+                "chunk_delay": 0,
+                "isp_ttl": 10
             }
         }
     ]

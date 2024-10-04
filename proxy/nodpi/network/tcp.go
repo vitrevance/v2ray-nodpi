@@ -57,7 +57,7 @@ func (d *TCP) Close() error {
 	return d.driver.Close()
 }
 
-func (d *TCP) Dial(ctx context.Context, addr *net.TCPAddr) (*conn, error) {
+func (d *TCP) Dial(ctx context.Context, addr *net.TCPAddr) (*RawConn, error) {
 	if addr == nil {
 		return nil, newError("address is nil")
 	}
@@ -65,7 +65,7 @@ func (d *TCP) Dial(ctx context.Context, addr *net.TCPAddr) (*conn, error) {
 	if terr != nil {
 		return nil, newError("failed to bind to port: ", terr)
 	}
-	c := &conn{
+	c := &RawConn{
 		stack:       d,
 		readBuffer:  ringbuffer.New(int(d.defaultWindow)).SetBlocking(true),
 		writeBuffer: ringbuffer.New(int(d.defaultWindow)).SetBlocking(true),
@@ -152,7 +152,7 @@ func (d *TCP) releaseBuffer(serialBuffer gopacket.SerializeBuffer) {
 	d.serializationBufferPool.Put(serialBuffer)
 }
 
-type conn struct {
+type RawConn struct {
 	stack      *TCP
 	localAddr  *net.TCPAddr
 	remoteAddr *net.TCPAddr
@@ -174,7 +174,7 @@ type conn struct {
 }
 
 // Close implements net.Conn.
-func (c *conn) Close() error {
+func (c *RawConn) Close() error {
 	c.closer.Do(func() {
 		c.readBuffer.CloseWithError(errors.New("closed"))
 		c.writeBuffer.CloseWriter()
@@ -186,38 +186,38 @@ func (c *conn) Close() error {
 }
 
 // LocalAddr implements net.Conn.
-func (c *conn) LocalAddr() net.Addr {
+func (c *RawConn) LocalAddr() net.Addr {
 	return c.localAddr
 }
 
 // Read implements net.Conn.
-func (c *conn) Read(b []byte) (n int, err error) {
+func (c *RawConn) Read(b []byte) (n int, err error) {
 	n, err = c.readBuffer.Read(b)
 	return
 }
 
 // RemoteAddr implements net.Conn.
-func (c *conn) RemoteAddr() net.Addr {
+func (c *RawConn) RemoteAddr() net.Addr {
 	return c.remoteAddr
 }
 
 // SetDeadline implements net.Conn.
-func (c *conn) SetDeadline(t time.Time) error {
+func (c *RawConn) SetDeadline(t time.Time) error {
 	panic("unimplemented")
 }
 
 // SetReadDeadline implements net.Conn.
-func (c *conn) SetReadDeadline(t time.Time) error {
+func (c *RawConn) SetReadDeadline(t time.Time) error {
 	panic("unimplemented")
 }
 
 // SetWriteDeadline implements net.Conn.
-func (c *conn) SetWriteDeadline(t time.Time) error {
+func (c *RawConn) SetWriteDeadline(t time.Time) error {
 	panic("unimplemented")
 }
 
 // Write implements net.Conn.
-func (c *conn) Write(b []byte) (n int, err error) {
+func (c *RawConn) Write(b []byte) (n int, err error) {
 	n, err = c.writeBuffer.Write(b)
 	return
 }
@@ -226,7 +226,7 @@ var errOutOfOrder error = errors.New("out of order")
 var errConnectionClosed error = errors.New("closed")
 var errFinished error = errors.New("finished")
 
-func (c *conn) background(ctx context.Context, driverInput <-chan []byte) {
+func (c *RawConn) background(ctx context.Context, driverInput <-chan []byte) {
 	defer c.Close()
 
 	timeoutDuration := time.Second * 15
@@ -369,7 +369,7 @@ func (c *conn) background(ctx context.Context, driverInput <-chan []byte) {
 	}()
 }
 
-func (c *conn) handshake(driverInput <-chan []byte, ctx context.Context) error {
+func (c *RawConn) handshake(driverInput <-chan []byte, ctx context.Context) error {
 	var ip4 layers.IPv4
 	var tcpIn layers.TCP
 	var tcpOut layers.TCP
@@ -448,19 +448,19 @@ func (c *conn) handshake(driverInput <-chan []byte, ctx context.Context) error {
 	return nil
 }
 
-func (c *conn) sendAck(seq, ack uint32) error {
+func (c *RawConn) sendAck(seq, ack uint32) error {
 	return c.sendFilled(seq, ack, false, false, nil)
 }
 
-func (c *conn) sendFin(seq, ack uint32) error {
+func (c *RawConn) sendFin(seq, ack uint32) error {
 	return c.sendFilled(seq, ack, false, true, nil)
 }
 
-func (c *conn) sendData(seq, ack uint32, data []byte) error {
+func (c *RawConn) sendData(seq, ack uint32, data []byte) error {
 	return c.sendFilled(seq, ack, true, false, data)
 }
 
-func (c *conn) sendFilled(seq, ack uint32, push, fin bool, data []byte) error {
+func (c *RawConn) sendFilled(seq, ack uint32, push, fin bool, data []byte) error {
 	tcpOut := layers.TCP{
 		SrcPort: layers.TCPPort(c.localAddr.Port),
 		DstPort: layers.TCPPort(c.remoteAddr.Port),
@@ -474,7 +474,7 @@ func (c *conn) sendFilled(seq, ack uint32, push, fin bool, data []byte) error {
 	return c.sendTCP(&tcpOut, data)
 }
 
-func (c *conn) Send(opts gopacket.SerializeOptions, ls ...gopacket.SerializableLayer) error {
+func (c *RawConn) Send(opts gopacket.SerializeOptions, ls ...gopacket.SerializableLayer) error {
 	if len(ls) < 2 || ls[0].LayerType() != layers.LayerTypeIPv4 || ls[1].LayerType() != layers.LayerTypeTCP {
 		return newError("unsupported layers")
 	}
@@ -491,7 +491,7 @@ func (c *conn) Send(opts gopacket.SerializeOptions, ls ...gopacket.SerializableL
 	return nil
 }
 
-func (c *conn) sendTCP(tcpOut *layers.TCP, payload []byte) error {
+func (c *RawConn) sendTCP(tcpOut *layers.TCP, payload []byte) error {
 	ip4 := layers.IPv4{
 		Version:  4,
 		TTL:      64,
@@ -501,6 +501,36 @@ func (c *conn) sendTCP(tcpOut *layers.TCP, payload []byte) error {
 	}
 	tcpOut.SetNetworkLayerForChecksum(&ip4)
 	return c.Send(gopacket.SerializeOptions{FixLengths: true, ComputeChecksums: true}, &ip4, tcpOut, gopacket.Payload(payload))
+}
+
+func (c *RawConn) SendWithOpts(payload []byte, opts ...func(*layers.IPv4, *layers.TCP) error) error {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+	ip4 := layers.IPv4{
+		Version:  4,
+		TTL:      64,
+		SrcIP:    c.localAddr.IP,
+		DstIP:    c.remoteAddr.IP,
+		Protocol: layers.IPProtocolTCP,
+	}
+	tcp := layers.TCP{
+		SrcPort: layers.TCPPort(c.localAddr.Port),
+		DstPort: layers.TCPPort(c.remoteAddr.Port),
+		Seq:     c.seq,
+		Ack:     c.ack,
+		ACK:     true,
+		PSH:     true,
+		FIN:     false,
+		Window:  uint16(c.readBuffer.Free()),
+	}
+	tcp.SetNetworkLayerForChecksum(&ip4)
+	for _, opt := range opts {
+		err := opt(&ip4, &tcp)
+		if err != nil {
+			return err
+		}
+	}
+	return c.Send(gopacket.SerializeOptions{FixLengths: true, ComputeChecksums: true}, &ip4, &tcp, gopacket.Payload(payload))
 }
 
 func readOrTimeout[T any](ch <-chan T, ctx context.Context) (T, error) {
@@ -520,4 +550,4 @@ func concatInt(a, b uint16) uint32 {
 	return (uint32(a) << 16) | uint32(b)
 }
 
-var _ net.Conn = (*conn)(nil)
+var _ net.Conn = (*RawConn)(nil)

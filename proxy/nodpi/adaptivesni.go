@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/v2fly/v2ray-core/v5/common/dice"
-	"github.com/v2fly/v2ray-core/v5/transport/internet"
 	"golang.org/x/exp/maps"
 )
 
@@ -25,7 +24,7 @@ type BlockPredictor struct {
 }
 
 type ConnSentinel struct {
-	Conn      internet.Connection
+	Conn      TCPConn
 	mux       sync.Mutex
 	predictor *BlockPredictor
 	failed    bool
@@ -39,7 +38,7 @@ func NewBlockPredictor() *BlockPredictor {
 	return predictor
 }
 
-func (p *BlockPredictor) NewReporter(conn internet.Connection) *ConnSentinel {
+func (p *BlockPredictor) NewReporter(conn TCPConn) *ConnSentinel {
 	return &ConnSentinel{predictor: p, Conn: conn}
 }
 
@@ -198,6 +197,6 @@ func (s *ConnSentinel) Write(buf []byte) (int, error) {
 	return s.Conn.Write(buf)
 }
 
-func DummyReporter(conn internet.Connection) *ConnSentinel {
+func DummyReporter(conn TCPConn) *ConnSentinel {
 	return &ConnSentinel{predictor: nil, Conn: conn}
 }

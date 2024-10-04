@@ -20,5 +20,6 @@ message Config {
 
   uint32 chunk_size = 1;
   uint32 chunk_delay = 2;
-  optional SNIFilters sni_filters = 3;
+  optional uint32 isp_ttl = 3;
+  optional SNIFilters sni_filters = 4;
 }

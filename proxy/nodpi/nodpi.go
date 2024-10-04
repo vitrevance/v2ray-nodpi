@@ -198,6 +198,7 @@ func (h *Handler) performRequest(input buf.Reader, conn *ConnSentinel, timer *si
 					return nil
 				}
 			}
+			sendFakeTLS(conn.Conn, uint8(h.config.GetIspTtl()))
 			conn.Write(raw[:1])
 			time.Sleep(time.Millisecond * time.Duration(h.config.ChunkDelay))
 			raw = raw[1:]

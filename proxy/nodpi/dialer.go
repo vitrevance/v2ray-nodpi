@@ -6,14 +6,18 @@ import (
 	"time"
 
 	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
 	vnet "github.com/v2fly/v2ray-core/v5/common/net"
 	"github.com/v2fly/v2ray-core/v5/transport/internet"
 	"github.com/vitrevance/v2ray-nodpi/proxy/nodpi/network"
 )
 
+type RawOption = func(*layers.IPv4, *layers.TCP) error
+
 type TCPConn interface {
 	net.Conn
 	Send(opts gopacket.SerializeOptions, ls ...gopacket.SerializableLayer) error
+	SendWithOpts([]byte, ...RawOption) error
 }
 
 type TCPDialer interface {
@@ -43,6 +47,11 @@ type dialerAdapter struct {
 
 type connAdapter struct {
 	conn internet.Connection
+}
+
+// SendWithOpts implements TCPConn.
+func (c connAdapter) SendWithOpts([]byte, ...func(*layers.IPv4, *layers.TCP) error) error {
+	return newError("cant send on default TCP stack")
 }
 
 // Close implements TCPConn.
