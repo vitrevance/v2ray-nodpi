@@ -54,10 +54,12 @@ func (h *Handler) Init(config *Config, pm policy.Manager, d dns.Client) error {
 	if config.GetSniFilters().GetAdaptiveMode() {
 		h.blockPredictor = NewBlockPredictor()
 	}
-	var err error
-	h.dialer, err = NewTCPDialer()
-	if err != nil {
-		return newError("failed to use custom TCP satck").Base(err).AtError()
+	if config.GetIspTtl() > 0 {
+		var err error
+		h.dialer, err = NewTCPDialer()
+		if err != nil {
+			return newError("failed to use custom TCP satck").Base(err).AtError()
+		}
 	}
 
 	return nil
@@ -82,10 +84,6 @@ func (h *Handler) resolveIP(domain string) net.Address {
 }
 
 func (h *Handler) Process(ctx context.Context, link *transport.Link, externalDialer internet.Dialer) error {
-	dialer := h.dialer
-	if dialer == nil {
-		dialer = WrapTCPDialer(externalDialer)
-	}
 	outbound := session.OutboundFromContext(ctx)
 	if outbound == nil || !outbound.Target.IsValid() {
 		return newError("target not specified.")
@@ -101,8 +99,18 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, externalDia
 	input := link.Reader
 	output := link.Writer
 
+	scanResult, err := h.scanRequest(input)
+	if err != nil {
+		return newError("failed to scan request").Base(err).AtWarning()
+	}
+
+	dialer := WrapTCPDialer(externalDialer)
+	if scanResult.ShouldIntercept && h.config.GetIspTtl() > 0 {
+		dialer = h.dialer
+	}
+
 	var conn *ConnSentinel
-	err := retry.ExponentialBackoff(5, 100).On(func() error {
+	err = retry.ExponentialBackoff(5, 100).On(func() error {
 		var rawConn TCPConn
 		var err error
 		rawConn, err = dialer.Dial(ctx, h.destinationToTCP(destination))
@@ -121,6 +129,11 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, externalDia
 	}
 	defer conn.Close()
 
+	conn.ReportSNI(scanResult.SNI)
+	if scanResult.ShouldIntercept {
+		conn.MarkCanceled()
+	}
+
 	timeoutDuration := time.Second * 30
 	ctx, cancel := context.WithCancel(ctx)
 	timer := signal.CancelAfterInactivity(ctx, cancel, timeoutDuration)
@@ -131,7 +144,7 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, externalDia
 		var writer buf.Writer
 		if destination.Network == net.Network_TCP {
 			// writer = buf.NewWriter(conn)
-			err := h.performRequest(input, conn, timer)
+			err := h.performRequest(input, conn, &scanResult, timer)
 			if err != nil {
 				return newError("failed to process TCP request").Base(err)
 			}
@@ -170,72 +183,98 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, externalDia
 	return nil
 }
 
-func (h *Handler) performRequest(input buf.Reader, conn *ConnSentinel, timer *signal.ActivityTimer) error {
+type ScanResult struct {
+	SNI             string
+	ShouldIntercept bool
+	raw             []byte
+}
+
+func (h *Handler) scanRequest(input buf.Reader) (ScanResult, error) {
 	var err error = ReadMore
 	var tls TLSRecord
 	var raw []byte
 	for err != nil && errors.Cause(err) == ReadMore {
 		inBuffer, readErr := input.ReadMultiBuffer()
 		if readErr != nil && (errors.Cause(readErr) != io.EOF || errors.Cause(err) == ReadMore) {
-			return newError("failed to read TCP input").Base(err)
+			return ScanResult{
+				ShouldIntercept: false,
+			}, newError("failed to read TCP input").Base(err)
 		}
 		rawPart := buf.Compact(inBuffer)[0].Bytes()
 		raw = append(raw, rawPart...)
 		tls, err = parseTLSHandshake(raw)
 	}
 	if err != nil {
-		newError("failed to parse TLS handshake").Base(err).AtInfo().WriteToLog()
-		conn.Write(raw)
+		// newError("failed to parse TLS handshake").Base(err).AtInfo().WriteToLog()
+		return ScanResult{
+			ShouldIntercept: false,
+			raw:             raw,
+		}, nil
 	} else {
 		if tls.Body[0] != 1 {
-			newError("this TLS is not a ClientHello - skipping").AtInfo().WriteToLog()
-			conn.Write(raw)
+			newError("this TLS is not a ClientHello - skipping").AtDebug().WriteToLog()
+			return ScanResult{
+				ShouldIntercept: false,
+				raw:             raw,
+			}, nil
 		} else {
 			var sni string
 			if h.config.GetSniFilters() != nil || h.config.GetIspTtl() > 0 {
 				sni = tls.SNI()
-				conn.ReportSNI(sni)
 			}
 			if h.config.GetSniFilters() != nil {
-				if !h.filterSNI(conn) {
-					conn.Write(raw)
-					if err := buf.Copy(input, buf.NewWriter(conn), buf.UpdateActivity(timer)); err != nil {
-						return newError("failed to process request").Base(err)
-					}
-					return nil
+				if !h.filterSNI(sni) {
+					return ScanResult{
+						ShouldIntercept: false,
+						SNI:             sni,
+						raw:             raw,
+					}, nil
 				}
 			}
-			if h.config.GetIspTtl() == 0 {
-				conn.Write(raw[:1])
-				time.Sleep(time.Millisecond * time.Duration(h.config.ChunkDelay))
-				raw = raw[1:]
-				if h.config.ChunkSize > 0 {
-					for uint32(len(raw)) > h.config.ChunkSize {
-						conn.Write(raw[:h.config.ChunkSize])
-						raw = raw[h.config.ChunkSize:]
-					}
+			return ScanResult{
+				ShouldIntercept: true,
+				SNI:             sni,
+				raw:             raw,
+			}, nil
+		}
+	}
+}
+
+func (h *Handler) performRequest(input buf.Reader, conn *ConnSentinel, sr *ScanResult, timer *signal.ActivityTimer) error {
+	var raw []byte = sr.raw
+	if sr.ShouldIntercept {
+		if h.config.GetIspTtl() == 0 {
+			conn.Write(raw[:1])
+			time.Sleep(time.Millisecond * time.Duration(h.config.ChunkDelay))
+			raw = raw[1:]
+			if h.config.ChunkSize > 0 {
+				for uint32(len(raw)) > h.config.ChunkSize {
+					conn.Write(raw[:h.config.ChunkSize])
+					raw = raw[h.config.ChunkSize:]
 				}
-				conn.Write(raw)
-			} else {
-				ttl := uint8(h.config.GetIspTtl())
-				buf := "hjksdfgkljsdfgklgafdljkbh"
-				seq := uint32(0)
+			}
+			conn.Write(raw)
+		} else {
+			ttl := uint8(h.config.GetIspTtl())
+			buf := "hjksdfgkljsdfgklgafdljkbh"
+			seq := uint32(0)
+			conn.Conn.SendWithOpts([]byte(buf), func(i *layers.IPv4, t *layers.TCP) error {
+				i.TTL = ttl
+				seq = t.Seq
+				return nil
+			})
+			for i := 0; i < 20; i++ {
+				seq += uint32(len(buf))
 				conn.Conn.SendWithOpts([]byte(buf), func(i *layers.IPv4, t *layers.TCP) error {
 					i.TTL = ttl
-					seq = t.Seq
+					t.Seq = seq
 					return nil
 				})
-				for i := 0; i < 20; i++ {
-					seq += uint32(len(buf))
-					conn.Conn.SendWithOpts([]byte(buf), func(i *layers.IPv4, t *layers.TCP) error {
-						i.TTL = ttl
-						t.Seq = seq
-						return nil
-					})
-				}
-				conn.Write(raw)
 			}
+			conn.Write(raw)
 		}
+	} else {
+		conn.Write(raw)
 	}
 
 	if err := buf.Copy(input, buf.NewWriter(conn), buf.UpdateActivity(timer)); err != nil {
@@ -244,8 +283,7 @@ func (h *Handler) performRequest(input buf.Reader, conn *ConnSentinel, timer *si
 	return nil
 }
 
-func (h *Handler) filterSNI(s *ConnSentinel) (allow bool) {
-	sni := s.GetSNI()
+func (h *Handler) filterSNI(sni string) (allow bool) {
 	allow = len(h.config.GetSniFilters().GetWhitelist()) == 0 && !h.config.GetSniFilters().GetAdaptiveMode()
 	for _, v := range h.config.GetSniFilters().GetWhitelist() {
 		re, err := regexp.Compile(v)
@@ -258,7 +296,7 @@ func (h *Handler) filterSNI(s *ConnSentinel) (allow bool) {
 		}
 	}
 	if !allow && h.config.GetSniFilters().GetAdaptiveMode() {
-		allow = h.blockPredictor.PredictAllow(s)
+		allow = h.blockPredictor.PredictAllow(sni)
 	}
 	for _, v := range h.config.GetSniFilters().GetBlacklist() {
 		re, err := regexp.Compile(v)

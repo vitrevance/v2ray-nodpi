@@ -124,10 +124,7 @@ func (p *BlockPredictor) commitReport(s *ConnSentinel) {
 }
 
 // Whether this SNI should go through splitter or not.
-func (p *BlockPredictor) PredictAllow(s *ConnSentinel) bool {
-	s.mux.Lock()
-	sni := s.sni
-	s.mux.Unlock()
+func (p *BlockPredictor) PredictAllow(sni string) bool {
 	p.mux.RLock()
 	st := p.sniStat[sni]
 	_, allowed := p.allow[sni]
@@ -144,7 +141,6 @@ func (p *BlockPredictor) PredictAllow(s *ConnSentinel) bool {
 	fails := st.failures.Load()
 	if attempts > 2 && fails > attempts/2 {
 		if dice.RollUint64()%attempts > 0 {
-			s.MarkCanceled()
 			return true
 		}
 	}

@@ -34,7 +34,18 @@
             "settings": {
                 "chunk_size": 99999,
                 "chunk_delay": 0,
-                "isp_ttl": 7
+                "isp_ttl": 7,
+                "sni_filters": {
+                    "whitelist": [
+                        "youtube.com",
+                        "googlevideo.com",
+                        "play.google.com",
+                        "gstatic",
+                        "ytimg",
+                        "hentai"
+                    ],
+                    "blacklist": []
+                }
             }
         }
     ]
