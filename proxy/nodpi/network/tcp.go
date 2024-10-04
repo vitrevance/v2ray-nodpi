@@ -10,12 +10,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bep/debounce"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/smallnest/ringbuffer"
 	"github.com/v2fly/v2ray-core/v5/common/signal"
-	"github.com/vitrevance/v2ray-nodpi/pkg/syncmap"
+	"github.com/vitrevance/v2ray-nodpi/pkg/gensync"
 	"gvisor.dev/gvisor/pkg/tcpip/ports"
 )
 
@@ -24,23 +23,33 @@ type TCP struct {
 	pm                      *ports.PortManager
 	rnd                     *rand.Rand
 	localIP                 net.IP
-	router                  syncmap.SyncMap[uint32, chan []byte]
+	router                  gensync.Map[uint32, chan []byte]
 	ctx                     context.Context
 	cancel                  func()
-	serializationBufferPool sync.Pool
+	serializationBufferPool gensync.Pool[gopacket.SerializeBuffer]
+	segmentBufferPool       gensync.Pool[[]byte]
 	defaultWindow           uint16
+	segmentLimit            int
 }
 
 func NewTCP(driver *Driver) (*TCP, error) {
+	const windowSize = 65535
+	const segmentSize = 2048
 	stack := &TCP{
 		driver: driver,
 		pm:     ports.NewPortManager(),
 		rnd:    rand.New(rand.NewSource(time.Now().Unix())),
-		serializationBufferPool: sync.Pool{New: func() any {
+		serializationBufferPool: gensync.Pool[gopacket.SerializeBuffer]{New: func() any {
 			return gopacket.NewSerializeBuffer()
 		}},
+		segmentBufferPool: gensync.Pool[[]byte]{
+			New: func() any {
+				return make([]byte, segmentSize)
+			},
+		},
 		localIP:       driver.ip,
-		defaultWindow: 65535,
+		defaultWindow: windowSize,
+		segmentLimit:  segmentSize,
 	}
 
 	stack.pm.SetPortRange(50000, 60000)
@@ -93,9 +102,11 @@ func (d *TCP) Dial(ctx context.Context, addr *net.TCPAddr) (*RawConn, error) {
 }
 
 func (d *TCP) recv() {
-	maxRetryDelay := time.Second * 30
+	const maxRetries = 10
+	driverRetries := 0
+	maxRetryDelay := time.Second * 2
 	retryDelay := time.Millisecond
-	etherBuf := make([]byte, 8192)
+	etherBuf := make([]byte, 8192*2)
 	var ip4 layers.IPv4
 	var tcp layers.TCP
 	decoder := gopacket.NewDecodingLayerParser(layers.LayerTypeIPv4, &ip4, &tcp)
@@ -108,14 +119,19 @@ func (d *TCP) recv() {
 		default:
 			rdSize, err := d.driver.Read(etherBuf)
 			if err != nil && d.ctx.Err() == nil {
+				driverRetries++
 				newError("tcp recv driver failed").Base(err).AtError().WriteToLog()
 				time.Sleep(retryDelay)
 				retryDelay = retryDelay * 2
 				if retryDelay > maxRetryDelay {
 					retryDelay = maxRetryDelay
 				}
+				if driverRetries > maxRetries {
+					panic("driver did too many retries")
+				}
 				continue
 			} else {
+				driverRetries = 0
 				retryDelay = time.Millisecond
 			}
 			buf := etherBuf[:rdSize]
@@ -140,17 +156,32 @@ func (d *TCP) recv() {
 				newError("received packet for unexpected port: ", tcp.DstPort).AtDebug().WriteToLog()
 				continue
 			}
-			ch <- slices.Clone(ip4.LayerPayload())
+			segmentBuf := d.acquireSegmentBuffer(len(ip4.LayerPayload()))
+			n := copy(segmentBuf, ip4.LayerPayload())
+			ch <- segmentBuf[:n]
 		}
 	}
 }
 
-func (d *TCP) acquireBuffer() gopacket.SerializeBuffer {
-	return d.serializationBufferPool.Get().(gopacket.SerializeBuffer)
+func (d *TCP) acquireSerialBuffer() gopacket.SerializeBuffer {
+	return d.serializationBufferPool.Get()
 }
 
-func (d *TCP) releaseBuffer(serialBuffer gopacket.SerializeBuffer) {
+func (d *TCP) releaseSerialBuffer(serialBuffer gopacket.SerializeBuffer) {
 	d.serializationBufferPool.Put(serialBuffer)
+}
+
+func (d *TCP) acquireSegmentBuffer(size int) []byte {
+	if size > d.segmentLimit {
+		return make([]byte, size)
+	}
+	return d.segmentBufferPool.Get()
+}
+
+func (d *TCP) releaseSegmentBuffer(serialBuffer []byte) {
+	if cap(serialBuffer) == d.segmentLimit {
+		d.segmentBufferPool.Put(serialBuffer[:cap(serialBuffer)])
+	}
 }
 
 type RawConn struct {
@@ -251,14 +282,6 @@ func (c *RawConn) background(ctx context.Context, driverInput <-chan []byte) {
 		}
 		waitlist := make([]orderedBuffer, 0)
 
-		debouncer := debounce.New(time.Millisecond * 150)
-		debounceAck := func(seq, ack uint32) {
-			debouncer(func() {
-				timer.Update()
-				c.sendAck(seq, ack)
-			})
-		}
-
 		handleIncoming := func(tcpIn *layers.TCP) error {
 			c.mux.Lock()
 			defer c.mux.Unlock()
@@ -289,7 +312,7 @@ func (c *RawConn) background(ctx context.Context, driverInput <-chan []byte) {
 			}
 			c.ack += uint32(nWritten)
 			if nWritten > 0 || tcpIn.FIN {
-				debounceAck(c.seq, c.ack)
+				c.sendAck(c.seq, c.ack)
 			}
 			if !tcpIn.FIN && tcpIn.ACK && c.fin {
 				return errFinished
@@ -321,10 +344,12 @@ func (c *RawConn) background(ctx context.Context, driverInput <-chan []byte) {
 				return 1
 			})
 			for err == nil && len(waitlist) > 0 {
-				decoder.DecodeLayers(waitlist[len(waitlist)-1].buf, &decoded)
+				i := len(waitlist) - 1
+				decoder.DecodeLayers(waitlist[i].buf, &decoded)
 				err = handleIncoming(&tcpIn)
 				if err == nil {
-					waitlist = waitlist[:len(waitlist)-1]
+					c.stack.releaseSegmentBuffer(waitlist[i].buf)
+					waitlist = waitlist[:i]
 				}
 			}
 			// newError("holding back ", len(waitlist), " packets").AtDebug().WriteToLog()
@@ -381,8 +406,8 @@ func (c *RawConn) handshake(driverInput <-chan []byte, ctx context.Context) erro
 		FixLengths:       true,
 		ComputeChecksums: true,
 	}
-	serialBuffer := c.stack.acquireBuffer()
-	defer c.stack.releaseBuffer(serialBuffer)
+	serialBuffer := c.stack.acquireSerialBuffer()
+	defer c.stack.releaseSerialBuffer(serialBuffer)
 	// SYN
 	ip4 = layers.IPv4{
 		Version:  4,
@@ -491,8 +516,8 @@ func (c *RawConn) Send(opts gopacket.SerializeOptions, ls ...gopacket.Serializab
 	if len(ls) < 2 || ls[0].LayerType() != layers.LayerTypeIPv4 || ls[1].LayerType() != layers.LayerTypeTCP {
 		return newError("unsupported layers")
 	}
-	serialBuffer := c.stack.acquireBuffer()
-	defer c.stack.releaseBuffer(serialBuffer)
+	serialBuffer := c.stack.acquireSerialBuffer()
+	defer c.stack.releaseSerialBuffer(serialBuffer)
 	err := gopacket.SerializeLayers(serialBuffer, opts, ls...)
 	if err != nil {
 		panic(err)
