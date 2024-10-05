@@ -3,9 +3,7 @@ package nodpi
 import (
 	"context"
 	"net"
-	"time"
 
-	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	vnet "github.com/v2fly/v2ray-core/v5/common/net"
 	"github.com/v2fly/v2ray-core/v5/transport/internet"
@@ -14,11 +12,7 @@ import (
 
 type RawOption = func(*layers.IPv4, *layers.TCP) error
 
-type TCPConn interface {
-	net.Conn
-	Send(opts gopacket.SerializeOptions, ls ...gopacket.SerializableLayer) error
-	SendWithOpts([]byte, ...RawOption) error
-}
+type TCPConn interface{ net.Conn }
 
 type TCPDialer interface {
 	Dial(context.Context, *net.TCPAddr) (TCPConn, error)
@@ -45,60 +39,6 @@ type dialerAdapter struct {
 	d internet.Dialer
 }
 
-type connAdapter struct {
-	conn internet.Connection
-}
-
-// SendWithOpts implements TCPConn.
-func (c connAdapter) SendWithOpts([]byte, ...func(*layers.IPv4, *layers.TCP) error) error {
-	return newError("cant send on default TCP stack")
-}
-
-// Close implements TCPConn.
-func (c connAdapter) Close() error {
-	return c.conn.Close()
-}
-
-// LocalAddr implements TCPConn.
-func (c connAdapter) LocalAddr() net.Addr {
-	return c.conn.LocalAddr()
-}
-
-// Read implements TCPConn.
-func (c connAdapter) Read(b []byte) (n int, err error) {
-	return c.conn.Read(b)
-}
-
-// RemoteAddr implements TCPConn.
-func (c connAdapter) RemoteAddr() net.Addr {
-	return c.conn.RemoteAddr()
-}
-
-// Send implements TCPConn.
-func (c connAdapter) Send(opts gopacket.SerializeOptions, ls ...gopacket.SerializableLayer) error {
-	return newError("cant send on default TCP stack")
-}
-
-// SetDeadline implements TCPConn.
-func (c connAdapter) SetDeadline(t time.Time) error {
-	return c.conn.SetDeadline(t)
-}
-
-// SetReadDeadline implements TCPConn.
-func (c connAdapter) SetReadDeadline(t time.Time) error {
-	return c.conn.SetReadDeadline(t)
-}
-
-// SetWriteDeadline implements TCPConn.
-func (c connAdapter) SetWriteDeadline(t time.Time) error {
-	return c.conn.SetWriteDeadline(t)
-}
-
-// Write implements TCPConn.
-func (c connAdapter) Write(b []byte) (n int, err error) {
-	return c.conn.Write(b)
-}
-
 // Close implements TCPDialer.
 func (d *dialerAdapter) Close() error {
 	return nil
@@ -108,7 +48,7 @@ func (d *dialerAdapter) Close() error {
 func (d *dialerAdapter) Dial(ctx context.Context, addr *net.TCPAddr) (TCPConn, error) {
 	conn, err := d.d.Dial(ctx, vnet.TCPDestination(vnet.IPAddress(addr.IP), vnet.Port(addr.Port)))
 	if conn != nil {
-		return connAdapter{conn: conn}, err
+		return conn, err
 	}
 	return nil, err
 }

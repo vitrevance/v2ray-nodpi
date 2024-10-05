@@ -22,6 +22,7 @@ import (
 	"github.com/v2fly/v2ray-core/v5/features/policy"
 	transport "github.com/v2fly/v2ray-core/v5/transport"
 	"github.com/v2fly/v2ray-core/v5/transport/internet"
+	"github.com/vitrevance/v2ray-nodpi/proxy/nodpi/network"
 )
 
 //go:generate protoc --go_out=../.. --go_opt=paths=source_relative -I ../.. proxy/nodpi/config.proto
@@ -60,6 +61,7 @@ func (h *Handler) Init(config *Config, pm policy.Manager, d dns.Client) error {
 		if err != nil {
 			return newError("failed to use custom TCP satck").Base(err).AtError()
 		}
+		newError("driver attached to ip: ", h.dialer.(*tcpDialer).tcp.LocalIP()).AtWarning().WriteToLog()
 	}
 
 	return nil
@@ -255,23 +257,35 @@ func (h *Handler) performRequest(input buf.Reader, conn *ConnSentinel, sr *ScanR
 			}
 			conn.Write(raw)
 		} else {
-			ttl := uint8(h.config.GetIspTtl())
-			buf := "hjksdfgkljsdfgklgafdljkbh"
-			seq := uint32(0)
-			conn.Conn.SendWithOpts([]byte(buf), func(i *layers.IPv4, t *layers.TCP) error {
-				i.TTL = ttl
-				seq = t.Seq
-				return nil
-			})
-			for i := 0; i < 20; i++ {
-				seq += uint32(len(buf))
-				conn.Conn.SendWithOpts([]byte(buf), func(i *layers.IPv4, t *layers.TCP) error {
-					i.TTL = ttl
-					t.Seq = seq
-					return nil
-				})
+			c := conn.Conn.(*network.RawConn)
+			err := h.interveil(c, sr)
+			if err != nil {
+				return newError("failed to interveil").Base(err).AtError()
 			}
-			conn.Write(raw)
+			// // pos := bytes.Index(raw, []byte(sr.SNI)) + 3
+			// ttl := uint8(h.config.GetIspTtl())
+			// buf := "hjksdfgkljsdfgklgafdljkbhidusafbgidubgsldifubglsaidbfliubgslifbs;izdbf;iusbgfgiusbd;lfib"
+			// seq := uint32(0)
+			// c.SendWithOpts([]byte(buf), func(i *layers.IPv4, t *layers.TCP) error {
+			// 	i.TTL = ttl
+			// 	seq = t.Seq
+			// 	return nil
+			// })
+			// for i := 0; i < 20; i++ {
+			// 	seq += uint32(len(buf))
+			// 	c.SendWithOpts([]byte(buf), func(i *layers.IPv4, t *layers.TCP) error {
+			// 		i.TTL = ttl
+			// 		t.Seq = seq
+			// 		return nil
+			// 	})
+			// 	// if len(raw) > 5 {
+			// 	// 	conn.Write(raw[:5])
+			// 	// 	c.Flush()
+			// 	// 	raw = raw[5:]
+			// 	// }
+			// }
+			// conn.Write(raw)
+			// raw = bytes.Replace(raw, []byte(sr.SNI), []byte("nhebtau.net"), 1)
 		}
 	} else {
 		conn.Write(raw)
@@ -330,4 +344,27 @@ func (h *Handler) destinationToTCP(d net.Destination) *net.TCPAddr {
 		IP:   ip,
 		Port: int(d.Port),
 	}
+}
+
+func (h *Handler) interveil(c *network.RawConn, sr *ScanResult) error {
+	raw := sr.raw
+
+	ttl := uint8(h.config.GetIspTtl())
+	buf := "hjksdfgkljsdfgklgafdljkbh"
+	seq := uint32(0)
+	c.SendWithOpts([]byte(buf), func(i *layers.IPv4, t *layers.TCP) error {
+		i.TTL = ttl
+		seq = t.Seq
+		return nil
+	})
+	for i := 0; i < 20; i++ {
+		seq += uint32(len(buf))
+		c.SendWithOpts([]byte(buf), func(i *layers.IPv4, t *layers.TCP) error {
+			i.TTL = ttl
+			t.Seq = seq
+			return nil
+		})
+	}
+	c.Write(raw)
+	return nil
 }

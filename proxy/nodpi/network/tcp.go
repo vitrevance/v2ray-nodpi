@@ -61,6 +61,10 @@ func NewTCP(driver *Driver) (*TCP, error) {
 	return stack, nil
 }
 
+func (d *TCP) LocalIP() net.IP {
+	return d.localIP
+}
+
 func (d *TCP) Close() error {
 	d.cancel()
 	return d.driver.Close()
@@ -203,6 +207,18 @@ type RawConn struct {
 	fin bool
 
 	inAck uint32
+}
+
+func (c *RawConn) GetSeq() uint32 {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+	return c.seq
+}
+
+func (c *RawConn) SetSeq(seq uint32) {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+	c.seq = seq
 }
 
 // Close implements net.Conn.
@@ -425,9 +441,13 @@ func (c *RawConn) handshake(driverInput <-chan []byte, ctx context.Context) erro
 	tcpOut.Options = []layers.TCPOption{
 		{
 			OptionType:   layers.TCPOptionKindMSS,
-			OptionLength: 2,
+			OptionLength: 4,
 			OptionData:   []byte{byte(maxMSS >> 8), byte(maxMSS)},
 		},
+		// {
+		// 	OptionType:   layers.TCPOptionKindSACKPermitted,
+		// 	OptionLength: 2,
+		// },
 	}
 	err := gopacket.SerializeLayers(serialBuffer, opts, &ip4, &tcpOut)
 	if err != nil {
@@ -569,6 +589,10 @@ func (c *RawConn) SendWithOpts(payload []byte, opts ...func(*layers.IPv4, *layer
 		}
 	}
 	return c.Send(gopacket.SerializeOptions{FixLengths: true, ComputeChecksums: true}, &ip4, &tcp, gopacket.Payload(payload))
+}
+
+func (c *RawConn) Flush() error {
+	return c.writeBuffer.Flush()
 }
 
 func readOrTimeout[T any](ch <-chan T, ctx context.Context) (T, error) {

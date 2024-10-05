@@ -84,15 +84,16 @@ func NewDriver() (*Driver, error) {
 				})
 				if err != nil {
 					errors = append(errors, newError("failed to add IP to interface").Base(err))
+					continue
 				}
 			}
-			cmd := exec.Command("iptables", "-C", "INPUT", "-d", chosenIP.String(), "-p", "tcp", "-j", "DROP")
+			cmd := exec.Command("iptables", "-C", "INPUT", "-d", chosenIP.String(), "-p", "tcp", "-j", "QUEUE")
 			err = cmd.Run()
 			if err != nil {
-				cmd := exec.Command("iptables", "-A", "INPUT", "-d", chosenIP.String(), "-p", "tcp", "-j", "DROP")
-				err = cmd.Run()
+				cmd := exec.Command("iptables", "-A", "INPUT", "-d", chosenIP.String(), "-p", "tcp", "-j", "QUEUE")
+				msg, err := cmd.CombinedOutput()
 				if err != nil {
-					return nil, newError("failed to configure ip filters").Base(err)
+					return nil, newError("failed to configure ip filters: ", string(msg)).Base(err)
 				}
 			}
 			conn, err := packet.Listen(&iface, packet.Datagram, unix.ETH_P_IP, nil)
