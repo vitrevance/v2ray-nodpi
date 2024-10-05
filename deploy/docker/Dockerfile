@@ -16,4 +16,6 @@ WORKDIR /app
 
 COPY --from=stage1 /nodpi/v2ray-server /app/v2ray-server
 
+RUN apt-get install iptables
+
 CMD ["/app/v2ray-server", "run", "--config", "/config.json", "-format", "jsonv5"]
