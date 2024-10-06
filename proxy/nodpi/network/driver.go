@@ -128,6 +128,10 @@ func NewDriver() (*Driver, error) {
 			if err != nil {
 				continue
 			}
+			if iface.MTU == 0 {
+				newError("interface MTU is set to 0 - resetting to default value: ", iface.Name).AtWarning().WriteToLog()
+				iface.MTU = 1500
+			}
 			return &Driver{
 				iface: &iface,
 				conn:  conn,
