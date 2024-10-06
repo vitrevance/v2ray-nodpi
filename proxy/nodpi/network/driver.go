@@ -20,6 +20,26 @@ type Driver struct {
 	ip    net.IP
 }
 
+func NewDriverManual(ifaceName, ifaceIP string) (*Driver, error) {
+	iface, err := net.InterfaceByName(ifaceName)
+	if err != nil {
+		return nil, newError("failed to atach to interface ", ifaceName).Base(err)
+	}
+	ip4 := net.ParseIP(ifaceIP).To4()
+	if ip4 == nil {
+		return nil, newError("ivalid ip address ", ifaceIP)
+	}
+	conn, err := packet.Listen(iface, packet.Datagram, unix.ETH_P_IP, nil)
+	if err != nil {
+		return nil, newError("failet to listen on intrerface ", iface).Base(err)
+	}
+	return &Driver{
+		iface: iface,
+		conn:  conn,
+		ip:    ip4,
+	}, nil
+}
+
 func NewDriver() (*Driver, error) {
 	iptablesTool := "iptables"
 	if v, ok := os.LookupEnv("IPTABLES_TOOL"); ok {

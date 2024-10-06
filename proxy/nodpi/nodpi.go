@@ -57,7 +57,16 @@ func (h *Handler) Init(config *Config, pm policy.Manager, d dns.Client) error {
 	}
 	if config.GetIspTtl() > 0 {
 		var err error
-		h.dialer, err = NewTCPDialer()
+		var driver *network.Driver
+		if config.GetIface() == nil {
+			driver, err = network.NewDriver()
+		} else {
+			driver, err = network.NewDriverManual(config.GetIface().GetName(), config.GetIface().GetIp())
+		}
+		if err != nil {
+			return newError("failed to initialize driver").Base(err).AtError()
+		}
+		h.dialer, err = NewTCPDialer(driver)
 		if err != nil {
 			return newError("failed to use custom TCP satck").Base(err).AtError()
 		}

@@ -59,11 +59,7 @@ func WrapTCPDialer(d internet.Dialer) TCPDialer {
 	return &dialerAdapter{d: d}
 }
 
-func NewTCPDialer() (TCPDialer, error) {
-	driver, err := network.NewDriver()
-	if err != nil {
-		return nil, err
-	}
+func NewTCPDialer(driver *network.Driver) (TCPDialer, error) {
 	stack, err := network.NewTCP(driver)
 	if err != nil {
 		driver.Close()

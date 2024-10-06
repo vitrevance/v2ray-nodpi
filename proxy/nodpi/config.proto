@@ -14,6 +14,11 @@ message SNIFilters {
   repeated string blacklist = 3;
 }
 
+message Interface {
+  string name = 1;
+  string ip = 2;
+}
+
 message Config {
   option (v2ray.core.common.protoext.message_opt).type = "outbound";
   option (v2ray.core.common.protoext.message_opt).short_name = "nodpi";
@@ -22,4 +27,5 @@ message Config {
   uint32 chunk_delay = 2;
   optional uint32 isp_ttl = 3;
   optional SNIFilters sni_filters = 4;
+  optional Interface iface = 5;
 }
