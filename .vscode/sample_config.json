@@ -32,7 +32,7 @@
         {
             "protocol": "nodpi",
             "settings": {
-                "chunk_size": 99999,
+                "chunk_size": 10,
                 "chunk_delay": 0,
                 "isp_ttl": 7,
                 "sni_filters": {
@@ -41,8 +41,7 @@
                         "googlevideo.com",
                         "play.google.com",
                         "gstatic",
-                        "ytimg",
-                        "hentai"
+                        "ytimg"
                     ],
                     "blacklist": []
                 }

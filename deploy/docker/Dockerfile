@@ -17,6 +17,8 @@ WORKDIR /app
 COPY --from=stage1 /nodpi/v2ray-server /app/v2ray-server
 
 RUN apk update
-RUN apk add iptables
+RUN apk add iptables iptables-legacy
+
+ENV IPTABLES_TOOL=iptables-legacy
 
 CMD ["/app/v2ray-server", "run", "--config", "/config.json", "-format", "jsonv5"]
