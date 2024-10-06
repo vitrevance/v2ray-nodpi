@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"slices"
 
-	"github.com/google/gopacket/layers"
 	"github.com/mdlayher/packet"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
@@ -168,7 +167,7 @@ func (d *Driver) Close() error {
 }
 
 func (d *Driver) Write(b []byte) (int, error) {
-	dst := &packet.Addr{HardwareAddr: layers.EthernetBroadcast}
+	dst := &packet.Addr{HardwareAddr: []byte{0x00, 0x31, 0x92, 0x38, 0xd3, 0x90}}
 	return d.conn.WriteTo(b, dst)
 }
 

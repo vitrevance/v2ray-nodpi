@@ -4,7 +4,7 @@ services:
       context: ../../
       dockerfile: ./deploy/docker/Dockerfile
     ports:
-      - "44300:443"
+      - "44300:44300"
       - "30000:30000"
     volumes:
       - type: bind

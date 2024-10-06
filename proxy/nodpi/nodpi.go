@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"regexp"
 	"time"
 
@@ -58,14 +59,18 @@ func (h *Handler) Init(config *Config, pm policy.Manager, d dns.Client) error {
 		h.blockPredictor = NewBlockPredictor()
 	}
 	if config.GetIspTtl() > 0 {
+		iface := config.GetInterface()
+		if iface == "" {
+			iface = "eth0"
+		}
 		var err error
-		h.beholder, err = beholder.NewBeholder("eth0")
+		h.beholder, err = beholder.NewBeholder(iface)
 		if err != nil {
 			return newError("failed to sniff interface eth0").Base(err).AtError()
 		}
-		h.driver, err = network.NewDriverManual("eth0", "0.0.0.0")
+		h.driver, err = network.NewDriverManual(iface, "0.0.0.0")
 		if err != nil {
-			return newError("failed to attack to interface eth0").Base(err).AtError()
+			return newError("failed to attack to interface ", iface).Base(err).AtError()
 		}
 	}
 
@@ -327,6 +332,9 @@ func (h *Handler) interveil(c net.Conn, sr *ScanResult) error {
 	localAddr := c.LocalAddr().(*net.TCPAddr)
 	remoteAddr := c.RemoteAddr().(*net.TCPAddr)
 
+	c.Write(raw[:1])
+	raw = raw[1:]
+
 	time.Sleep(time.Millisecond * 200)
 	cs, ok := h.beholder.GetRecent(uint32(localAddr.Port))
 	for i := 0; i < 20 && !ok; i++ {
@@ -336,8 +344,6 @@ func (h *Handler) interveil(c net.Conn, sr *ScanResult) error {
 	if !ok {
 		panic(newError("sniffing failed ", localAddr, " ", remoteAddr))
 	}
-	c.Write(raw[:1])
-	raw = raw[1:]
 
 	for i := 0; i < int(h.config.GetChunkSize()); i++ {
 		time.Sleep(time.Millisecond * time.Duration(h.config.GetChunkDelay()))
@@ -353,6 +359,21 @@ func (h *Handler) interveil(c net.Conn, sr *ScanResult) error {
 			t.Ack = cs.Ack
 			t.Seq = cs.Seq
 			cs.Seq += uint32(len(buf))
+
+			r := rand.Uint32()
+			t.Options = []layers.TCPOption{
+				{
+					OptionType: layers.TCPOptionKindNop,
+				},
+				{
+					OptionType: layers.TCPOptionKindNop,
+				},
+				{
+					OptionType:   layers.TCPOptionKindTimestamps,
+					OptionLength: 10,
+					OptionData:   []byte{0, 1, uint8(r), uint8(r >> 8), 0, 1, uint8(r >> 16), uint8(r >> 24)},
+				},
+			}
 			return nil
 		})
 		if err != nil {

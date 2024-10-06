@@ -53,7 +53,7 @@ func NewBeholder(iface string) (*Beholder, error) {
 }
 
 func (b *Beholder) GetRecent(port uint32) (ConnState, bool) {
-	return b.mapper.Load(port)
+	return b.mapper.LoadAndDelete(port)
 }
 
 func (b *Beholder) listen() {

@@ -9,7 +9,7 @@ option java_multiple_files = true;
 import "common/protoext/extensions.proto";
 
 message SNIFilters {
-  optional bool adaptive_mode = 1;
+  bool adaptive_mode = 1;
   repeated string whitelist = 2;
   repeated string blacklist = 3;
 }
@@ -20,6 +20,7 @@ message Config {
 
   uint32 chunk_size = 1;
   uint32 chunk_delay = 2;
-  optional uint32 isp_ttl = 3;
-  optional SNIFilters sni_filters = 4;
+  uint32 isp_ttl = 3;
+  SNIFilters sni_filters = 4;
+  string interface = 5;
 }
