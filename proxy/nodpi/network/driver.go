@@ -132,6 +132,7 @@ func NewDriver() (*Driver, error) {
 				newError("interface MTU is set to 0 - resetting to default value: ", iface.Name).AtWarning().WriteToLog()
 				iface.MTU = 1500
 			}
+			newError("bound to interface: ", iface, " at IP ", chosenIP).AtWarning().WriteToLog()
 			return &Driver{
 				iface: &iface,
 				conn:  conn,
