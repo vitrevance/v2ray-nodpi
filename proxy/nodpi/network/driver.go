@@ -76,6 +76,7 @@ func NewDriver() (*Driver, error) {
 				errors = append(errors, newError("no vlaid ip to bind to"))
 				continue
 			}
+			newError("candidate interface IP adresses: ", iface.Name, validIPs).AtWarning().WriteToLog()
 			chosenIP := validIPs[0].IP.To4()
 			if len(validIPs) == 1 {
 				if validIPs[0].IP.To4()[3] == 0 {
