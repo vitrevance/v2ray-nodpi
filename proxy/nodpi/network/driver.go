@@ -94,19 +94,18 @@ func NewDriver() (*Driver, error) {
 				errors = append(errors, newError("no vlaid ip to bind to"))
 				continue
 			}
-			chosenIP := validIPs[0].IP.To4()
+			chosenIP := slices.Clone(validIPs[0].IP.To4())
 			if bindIP != nil {
 				chosenIP = bindIP
 			} else {
 				chosenIP[3] = 0
 			}
-			newError("candidate interface IP adresse: ", iface.Name, chosenIP).AtWarning().WriteToLog()
+			newError("candidate interface IP adress: ", iface.Name, chosenIP).AtWarning().WriteToLog()
 			newError("candidate interface IP adresses: ", iface.Name, validIPs).AtWarning().WriteToLog()
 			if !slices.ContainsFunc(validIPs, func(a *net.IPNet) bool {
 				return chosenIP.Equal(a.IP.To4())
 			}) {
 				validIPs[0].Mask = []byte{0xff, 0xff, 0xff, 0xff}
-				validIPs[0].IP.To4()[3] = 0
 				copy(validIPs[0].IP.To4(), chosenIP.To4())
 				err = netlink.AddrAdd(lnk, &netlink.Addr{
 					IPNet: validIPs[0],
@@ -116,10 +115,10 @@ func NewDriver() (*Driver, error) {
 					continue
 				}
 			}
-			cmd := exec.Command(iptablesTool, "-C", "INPUT", "-d", chosenIP.String(), "-p", "tcp", "-j", "QUEUE")
+			cmd := exec.Command(iptablesTool, "-C", "INPUT", "-d", chosenIP.String(), "-p", "tcp", "-j", "DROP")
 			err = cmd.Run()
 			if err != nil {
-				cmd := exec.Command(iptablesTool, "-A", "INPUT", "-d", chosenIP.String(), "-p", "tcp", "-j", "QUEUE")
+				cmd := exec.Command(iptablesTool, "-A", "INPUT", "-d", chosenIP.String(), "-p", "tcp", "-j", "DROP")
 				msg, err := cmd.CombinedOutput()
 				if err != nil {
 					return nil, newError("failed to configure ip filters: ", string(msg)).Base(err)
