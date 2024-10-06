@@ -336,6 +336,8 @@ func (h *Handler) interveil(c net.Conn, sr *ScanResult) error {
 	if !ok {
 		panic(newError("sniffing failed ", localAddr, " ", remoteAddr))
 	}
+	c.Write(raw[:1])
+	raw = raw[1:]
 
 	for i := 0; i < int(h.config.GetChunkSize()); i++ {
 		time.Sleep(time.Millisecond * time.Duration(h.config.GetChunkDelay()))
