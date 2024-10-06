@@ -26,9 +26,27 @@ func NewDriver() (*Driver, error) {
 		iptablesTool = v
 		newError("using specified version of iptables: ", iptablesTool).AtWarning().WriteToLog()
 	}
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return nil, newError("failed to get interfaces").Base(err)
+	var bindIP net.IP
+	if v, ok := os.LookupEnv("BIND"); ok {
+		bindIP = net.ParseIP(v).To4()
+	}
+	var bindIface string
+	if v, ok := os.LookupEnv("IFACE"); ok {
+		bindIface = v
+	}
+	var ifaces []net.Interface
+	if bindIface == "" {
+		var err error
+		ifaces, err = net.Interfaces()
+		if err != nil {
+			return nil, newError("failed to get interfaces").Base(err)
+		}
+	} else {
+		iface, err := net.InterfaceByName(bindIface)
+		if err != nil {
+			return nil, newError("failed to get interface ", bindIface).Base(err)
+		}
+		ifaces = append(ifaces, *iface)
 	}
 	if len(ifaces) == 0 {
 		return nil, newError("no available network interfaces")
@@ -76,16 +94,20 @@ func NewDriver() (*Driver, error) {
 				errors = append(errors, newError("no vlaid ip to bind to"))
 				continue
 			}
-			newError("candidate interface IP adresses: ", iface.Name, validIPs).AtWarning().WriteToLog()
 			chosenIP := validIPs[0].IP.To4()
-			if len(validIPs) == 1 {
-				if validIPs[0].IP.To4()[3] == 0 {
-					errors = append(errors, newError("interface has single zero-ending IP"))
-					continue
-				}
+			if bindIP != nil {
+				chosenIP = bindIP
+			} else {
+				chosenIP[3] = 0
+			}
+			newError("candidate interface IP adresse: ", iface.Name, chosenIP).AtWarning().WriteToLog()
+			newError("candidate interface IP adresses: ", iface.Name, validIPs).AtWarning().WriteToLog()
+			if !slices.ContainsFunc(validIPs, func(a *net.IPNet) bool {
+				return chosenIP.Equal(a.IP.To4())
+			}) {
 				validIPs[0].Mask = []byte{0xff, 0xff, 0xff, 0xff}
 				validIPs[0].IP.To4()[3] = 0
-				chosenIP = validIPs[0].IP.To4()
+				copy(validIPs[0].IP.To4(), chosenIP.To4())
 				err = netlink.AddrAdd(lnk, &netlink.Addr{
 					IPNet: validIPs[0],
 				})
