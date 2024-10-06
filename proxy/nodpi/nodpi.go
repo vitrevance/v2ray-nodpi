@@ -22,6 +22,7 @@ import (
 	"github.com/v2fly/v2ray-core/v5/features/policy"
 	transport "github.com/v2fly/v2ray-core/v5/transport"
 	"github.com/v2fly/v2ray-core/v5/transport/internet"
+	"github.com/vitrevance/v2ray-nodpi/proxy/nodpi/beholder"
 	"github.com/vitrevance/v2ray-nodpi/proxy/nodpi/network"
 )
 
@@ -44,7 +45,8 @@ type Handler struct {
 	dns            dns.Client
 	config         *Config
 	blockPredictor *BlockPredictor
-	dialer         TCPDialer
+	beholder       *beholder.Beholder
+	driver         *network.Driver
 }
 
 func (h *Handler) Init(config *Config, pm policy.Manager, d dns.Client) error {
@@ -57,29 +59,20 @@ func (h *Handler) Init(config *Config, pm policy.Manager, d dns.Client) error {
 	}
 	if config.GetIspTtl() > 0 {
 		var err error
-		var driver *network.Driver
-		if config.GetIface() == nil {
-			driver, err = network.NewDriver()
-		} else {
-			driver, err = network.NewDriverManual(config.GetIface().GetName(), config.GetIface().GetIp())
-		}
+		h.beholder, err = beholder.NewBeholder("eth0")
 		if err != nil {
-			return newError("failed to initialize driver").Base(err).AtError()
+			return newError("failed to sniff interface eth0").Base(err).AtError()
 		}
-		h.dialer, err = NewTCPDialer(driver)
+		h.driver, err = network.NewDriverManual("eth0", "0.0.0.0")
 		if err != nil {
-			return newError("failed to use custom TCP satck").Base(err).AtError()
+			return newError("failed to attack to interface eth0").Base(err).AtError()
 		}
-		newError("driver attached to ip: ", h.dialer.(*tcpDialer).tcp.LocalIP()).AtWarning().WriteToLog()
 	}
 
 	return nil
 }
 
 func (h *Handler) resolveIP(domain string) net.Address {
-	// if strings.Contains(domain, ".googlevideo.com") || strings.Contains(domain, "youtube.com") || strings.Contains(domain, ".gstatic.com") {
-	// 	return net.IPAddress([]byte{74, 125, 99, 7})
-	// }
 	ips, err := dns.LookupIPWithOption(h.dns, domain, dns.IPOption{
 		IPv4Enable: true,
 		IPv6Enable: false,
@@ -94,7 +87,7 @@ func (h *Handler) resolveIP(domain string) net.Address {
 	return net.IPAddress(ips[dice.Roll(len(ips))])
 }
 
-func (h *Handler) Process(ctx context.Context, link *transport.Link, externalDialer internet.Dialer) error {
+func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer internet.Dialer) error {
 	outbound := session.OutboundFromContext(ctx)
 	if outbound == nil || !outbound.Target.IsValid() {
 		return newError("target not specified.")
@@ -115,16 +108,11 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, externalDia
 		return newError("failed to scan request").Base(err).AtWarning()
 	}
 
-	dialer := WrapTCPDialer(externalDialer)
-	if scanResult.ShouldIntercept && h.config.GetIspTtl() > 0 {
-		dialer = h.dialer
-	}
-
 	var conn *ConnSentinel
 	err = retry.ExponentialBackoff(5, 100).On(func() error {
-		var rawConn TCPConn
+		var rawConn net.Conn
 		var err error
-		rawConn, err = dialer.Dial(ctx, h.destinationToTCP(destination))
+		rawConn, err = dialer.Dial(ctx, destination)
 		if err != nil {
 			return err
 		}
@@ -266,35 +254,10 @@ func (h *Handler) performRequest(input buf.Reader, conn *ConnSentinel, sr *ScanR
 			}
 			conn.Write(raw)
 		} else {
-			c := conn.Conn.(*network.RawConn)
-			err := h.interveil(c, sr)
+			err := h.interveil(conn.Conn, sr)
 			if err != nil {
 				return newError("failed to interveil").Base(err).AtError()
 			}
-			// // pos := bytes.Index(raw, []byte(sr.SNI)) + 3
-			// ttl := uint8(h.config.GetIspTtl())
-			// buf := "hjksdfgkljsdfgklgafdljkbhidusafbgidubgsldifubglsaidbfliubgslifbs;izdbf;iusbgfgiusbd;lfib"
-			// seq := uint32(0)
-			// c.SendWithOpts([]byte(buf), func(i *layers.IPv4, t *layers.TCP) error {
-			// 	i.TTL = ttl
-			// 	seq = t.Seq
-			// 	return nil
-			// })
-			// for i := 0; i < 20; i++ {
-			// 	seq += uint32(len(buf))
-			// 	c.SendWithOpts([]byte(buf), func(i *layers.IPv4, t *layers.TCP) error {
-			// 		i.TTL = ttl
-			// 		t.Seq = seq
-			// 		return nil
-			// 	})
-			// 	// if len(raw) > 5 {
-			// 	// 	conn.Write(raw[:5])
-			// 	// 	c.Flush()
-			// 	// 	raw = raw[5:]
-			// 	// }
-			// }
-			// conn.Write(raw)
-			// raw = bytes.Replace(raw, []byte(sr.SNI), []byte("nhebtau.net"), 1)
 		}
 	} else {
 		conn.Write(raw)
@@ -355,25 +318,42 @@ func (h *Handler) destinationToTCP(d net.Destination) *net.TCPAddr {
 	}
 }
 
-func (h *Handler) interveil(c *network.RawConn, sr *ScanResult) error {
+func (h *Handler) interveil(c net.Conn, sr *ScanResult) error {
 	raw := sr.raw
 
 	ttl := uint8(h.config.GetIspTtl())
 	buf := "hjksdfgkljsdfgklgafdljkbh"
-	seq := uint32(0)
-	c.SendWithOpts([]byte(buf), func(i *layers.IPv4, t *layers.TCP) error {
-		i.TTL = ttl
-		seq = t.Seq
-		return nil
-	})
+
+	time.Sleep(time.Millisecond * 150)
+
+	localAddr := c.LocalAddr().(*net.TCPAddr)
+	remoteAddr := c.RemoteAddr().(*net.TCPAddr)
+	cs, ok := h.beholder.GetRecent(uint32(localAddr.Port))
+	if !ok {
+		panic(newError("sniffing failed ", localAddr, " ", remoteAddr))
+	}
+
 	for i := 0; i < 20; i++ {
-		seq += uint32(len(buf))
-		c.SendWithOpts([]byte(buf), func(i *layers.IPv4, t *layers.TCP) error {
+		err := network.SendWithOpts(h.driver, []byte(buf), func(i *layers.IPv4, t *layers.TCP) error {
+			i.SrcIP = localAddr.IP.To4()
+			i.DstIP = remoteAddr.IP.To4()
+
+			t.SrcPort = layers.TCPPort(localAddr.Port)
+			t.DstPort = layers.TCPPort(remoteAddr.Port)
+
 			i.TTL = ttl
-			t.Seq = seq
+
+			t.Ack = cs.Ack
+			t.Seq = cs.Seq
+			cs.Seq += uint32(len(buf))
 			return nil
 		})
+		if err != nil {
+			panic(err)
+		}
 	}
+
 	c.Write(raw)
+
 	return nil
 }

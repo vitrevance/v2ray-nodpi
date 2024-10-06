@@ -13,4 +13,3 @@ services:
         target: /config.json
     restart: unless-stopped
     privileged: true
-    network_mode: host

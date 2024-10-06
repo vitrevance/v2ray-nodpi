@@ -1,6 +1,7 @@
 package nodpi
 
 import (
+	"net"
 	"os"
 	"regexp"
 	"strings"
@@ -24,7 +25,7 @@ type BlockPredictor struct {
 }
 
 type ConnSentinel struct {
-	Conn      TCPConn
+	Conn      net.Conn
 	mux       sync.Mutex
 	predictor *BlockPredictor
 	failed    bool
@@ -38,7 +39,7 @@ func NewBlockPredictor() *BlockPredictor {
 	return predictor
 }
 
-func (p *BlockPredictor) NewReporter(conn TCPConn) *ConnSentinel {
+func (p *BlockPredictor) NewReporter(conn net.Conn) *ConnSentinel {
 	return &ConnSentinel{predictor: p, Conn: conn}
 }
 
@@ -193,6 +194,6 @@ func (s *ConnSentinel) Write(buf []byte) (int, error) {
 	return s.Conn.Write(buf)
 }
 
-func DummyReporter(conn TCPConn) *ConnSentinel {
+func DummyReporter(conn net.Conn) *ConnSentinel {
 	return &ConnSentinel{predictor: nil, Conn: conn}
 }

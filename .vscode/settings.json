@@ -3,4 +3,7 @@
         "dlv": "~/go/bin/sudodlv",
         "go": "/usr/local/go/bin/sudogo"
     },
+    "go.toolsEnvVars": {
+        "CGO_ENABLED": "1"
+    },
 }
