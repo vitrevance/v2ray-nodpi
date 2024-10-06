@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
+	"os"
 	"os/exec"
 	"slices"
 
@@ -20,6 +21,11 @@ type Driver struct {
 }
 
 func NewDriver() (*Driver, error) {
+	iptablesTool := "iptables"
+	if v, ok := os.LookupEnv("IPTABLES_TOOL"); ok {
+		iptablesTool = v
+		newError("using specified version of iptables: ", iptablesTool).AtWarning().WriteToLog()
+	}
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return nil, newError("failed to get interfaces").Base(err)
@@ -87,10 +93,10 @@ func NewDriver() (*Driver, error) {
 					continue
 				}
 			}
-			cmd := exec.Command("iptables", "-C", "INPUT", "-d", chosenIP.String(), "-p", "tcp", "-j", "QUEUE")
+			cmd := exec.Command(iptablesTool, "-C", "INPUT", "-d", chosenIP.String(), "-p", "tcp", "-j", "QUEUE")
 			err = cmd.Run()
 			if err != nil {
-				cmd := exec.Command("iptables", "-A", "INPUT", "-d", chosenIP.String(), "-p", "tcp", "-j", "QUEUE")
+				cmd := exec.Command(iptablesTool, "-A", "INPUT", "-d", chosenIP.String(), "-p", "tcp", "-j", "QUEUE")
 				msg, err := cmd.CombinedOutput()
 				if err != nil {
 					return nil, newError("failed to configure ip filters: ", string(msg)).Base(err)
