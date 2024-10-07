@@ -5,9 +5,11 @@ go 1.21
 toolchain go1.21.4
 
 require (
+	github.com/google/gopacket v1.1.19
 	github.com/stretchr/testify v1.9.0
 	golang.org/x/sys v0.20.0
 	google.golang.org/protobuf v1.34.0
+	gvisor.dev/gvisor v0.0.0-20231020174304-b8a429915ff1
 )
 
 require (
@@ -17,15 +19,12 @@ require (
 	github.com/go-chi/render v1.0.3 // indirect
 	github.com/go-playground/validator/v10 v10.20.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
-	github.com/google/gopacket v1.1.19 // indirect
-	github.com/gopacket/gopacket v1.2.0 // indirect
 	github.com/gorilla/websocket v1.5.1 // indirect
 	github.com/jhump/protoreflect v1.16.0 // indirect
 	github.com/josharian/native v1.1.0 // indirect
 	github.com/lunixbochs/struc v0.0.0-20200707160740-784aaebc1d40 // indirect
 	github.com/mdlayher/socket v0.4.1 // indirect
 	github.com/mustafaturan/bus v1.0.2 // indirect
-	github.com/packetcap/go-pcap v0.0.0-20240528124601-8c87ecf5dbc5 // indirect
 	github.com/pelletier/go-toml v1.9.5 // indirect
 	github.com/pion/transport/v2 v2.2.5 // indirect
 	github.com/pires/go-proxyproto v0.7.0 // indirect
@@ -33,7 +32,6 @@ require (
 	github.com/quic-go/quic-go v0.43.0 // indirect
 	github.com/refraction-networking/utls v1.6.5 // indirect
 	github.com/seiflotfy/cuckoofilter v0.0.0-20220411075957-e3b120b3f5fb // indirect
-	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/v2fly/BrowserBridge v0.0.0-20210430233438-0570fc1d7d08 // indirect
 	github.com/v2fly/VSign v0.0.0-20201108000810-e2adc24bf848 // indirect
 	github.com/v2fly/ss-bloomring v0.0.0-20210312155135-28617310f63e // indirect
@@ -47,7 +45,6 @@ require (
 	golang.org/x/sync v0.7.0 // indirect
 	google.golang.org/grpc v1.63.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	gvisor.dev/gvisor v0.0.0-20231020174304-b8a429915ff1 // indirect
 	lukechampine.com/blake3 v1.3.0 // indirect
 )
 
@@ -55,7 +52,6 @@ require (
 	github.com/aead/cmac v0.0.0-20160719120800-7af84192f0b1 // indirect
 	github.com/ajg/form v1.5.1 // indirect
 	github.com/andybalholm/brotli v1.0.6 // indirect
-	github.com/bep/debounce v1.2.1
 	github.com/boljen/go-bitmap v0.0.0-20151001105940-23cd2fb0ce7d // indirect
 	github.com/bufbuild/protocompile v0.10.0 // indirect
 	github.com/cloudflare/circl v1.3.7 // indirect

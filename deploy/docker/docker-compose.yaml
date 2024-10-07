@@ -3,9 +3,9 @@ services:
     build:
       context: ../../
       dockerfile: ./deploy/docker/Dockerfile
-    ports:
-      - "44300:44300"
-      - "30000:30000"
+    # ports:
+    #   - "44300:44300"
+    #   - "30000:30000"
     volumes:
       - type: bind
         read_only: true
@@ -13,3 +13,4 @@ services:
         target: /config.json
     restart: unless-stopped
     privileged: true
+    network_mode: host

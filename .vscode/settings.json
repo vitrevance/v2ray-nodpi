@@ -1,7 +1,7 @@
 {
     "go.alternateTools": {
-        "dlv": "~/go/bin/sudodlv",
-        "go": "/usr/local/go/bin/sudogo"
+        "dlv": "~/go/bin/dlv",
+        "go": "/usr/local/go/bin/go"
     },
     "go.toolsEnvVars": {
         "CGO_ENABLED": "1"

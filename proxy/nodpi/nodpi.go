@@ -324,6 +324,7 @@ func (h *Handler) destinationToTCP(d net.Destination) *net.TCPAddr {
 }
 
 func (h *Handler) interveil(c net.Conn, sr *ScanResult) error {
+	drvr := *h.driver
 	raw := sr.raw
 
 	ttl := uint8(h.config.GetIspTtl())
@@ -332,8 +333,8 @@ func (h *Handler) interveil(c net.Conn, sr *ScanResult) error {
 	localAddr := c.LocalAddr().(*net.TCPAddr)
 	remoteAddr := c.RemoteAddr().(*net.TCPAddr)
 
-	c.Write(raw[:1])
-	raw = raw[1:]
+	// c.Write(raw[:1])
+	// raw = raw[1:]
 
 	time.Sleep(time.Millisecond * 200)
 	cs, ok := h.beholder.GetRecent(uint32(localAddr.Port))
@@ -344,10 +345,11 @@ func (h *Handler) interveil(c net.Conn, sr *ScanResult) error {
 	if !ok {
 		panic(newError("sniffing failed ", localAddr, " ", remoteAddr))
 	}
+	drvr.DstMAC = cs.MAC
 
 	for i := 0; i < int(h.config.GetChunkSize()); i++ {
 		time.Sleep(time.Millisecond * time.Duration(h.config.GetChunkDelay()))
-		err := network.SendWithOpts(h.driver, []byte(buf), func(i *layers.IPv4, t *layers.TCP) error {
+		err := network.SendWithOpts(&drvr, []byte(buf), func(i *layers.IPv4, t *layers.TCP) error {
 			i.SrcIP = localAddr.IP.To4()
 			i.DstIP = remoteAddr.IP.To4()
 

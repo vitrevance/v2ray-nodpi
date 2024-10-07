@@ -12,6 +12,8 @@
             "program": "${workspaceFolder}/main/main.go",
             "output": "${workspaceFolder}/build/debug",
             "cwd": "${workspaceFolder}/build/",
+            "asRoot": true,
+            "console": "integratedTerminal",
             "args": [
                 "run",
                 "--config",

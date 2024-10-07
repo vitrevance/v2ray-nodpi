@@ -32,9 +32,10 @@
         {
             "protocol": "nodpi",
             "settings": {
-                "chunk_size": 10,
-                "chunk_delay": 0,
-                "isp_ttl": 7,
+                "chunk_size": 35,
+                "chunk_delay": 1,
+                "isp_ttl": 8,
+                "interface": "wlp2s0",
                 "sni_filters": {
                     "whitelist": [
                         "youtube.com",

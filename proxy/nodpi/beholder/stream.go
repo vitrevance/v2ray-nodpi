@@ -12,6 +12,7 @@ import (
 type ConnState struct {
 	Seq uint32
 	Ack uint32
+	MAC net.HardwareAddr
 }
 
 type Beholder struct {
@@ -64,6 +65,7 @@ func (b *Beholder) listen() {
 				b.mapper.Store(uint32(tcp.SrcPort), ConnState{
 					Seq: tcp.Seq,
 					Ack: tcp.Ack,
+					MAC: p.LinkLayer().LinkFlow().Dst().Raw(),
 				})
 			}
 		}

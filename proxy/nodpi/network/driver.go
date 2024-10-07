@@ -8,15 +8,17 @@ import (
 	"os/exec"
 	"slices"
 
+	"github.com/google/gopacket/layers"
 	"github.com/mdlayher/packet"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 )
 
 type Driver struct {
-	iface *net.Interface
-	conn  *packet.Conn
-	ip    net.IP
+	iface  *net.Interface
+	conn   *packet.Conn
+	ip     net.IP
+	DstMAC net.HardwareAddr
 }
 
 func NewDriverManual(ifaceName, ifaceIP string) (*Driver, error) {
@@ -33,9 +35,10 @@ func NewDriverManual(ifaceName, ifaceIP string) (*Driver, error) {
 		return nil, newError("failet to listen on intrerface ", iface).Base(err)
 	}
 	return &Driver{
-		iface: iface,
-		conn:  conn,
-		ip:    ip4,
+		iface:  iface,
+		conn:   conn,
+		ip:     ip4,
+		DstMAC: layers.EthernetBroadcast,
 	}, nil
 }
 
@@ -167,7 +170,12 @@ func (d *Driver) Close() error {
 }
 
 func (d *Driver) Write(b []byte) (int, error) {
-	dst := &packet.Addr{HardwareAddr: []byte{0x00, 0x31, 0x92, 0x38, 0xd3, 0x90}}
+	dst := &packet.Addr{HardwareAddr: d.DstMAC}
+	return d.conn.WriteTo(b, dst)
+}
+
+func (d *Driver) WriteTo(b []byte, mac net.HardwareAddr) (int, error) {
+	dst := &packet.Addr{HardwareAddr: mac}
 	return d.conn.WriteTo(b, dst)
 }
 
