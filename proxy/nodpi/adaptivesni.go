@@ -1,6 +1,7 @@
 package nodpi
 
 import (
+	"net"
 	"os"
 	"regexp"
 	"strings"
@@ -9,7 +10,6 @@ import (
 	"time"
 
 	"github.com/v2fly/v2ray-core/v5/common/dice"
-	"github.com/v2fly/v2ray-core/v5/transport/internet"
 	"golang.org/x/exp/maps"
 )
 
@@ -25,7 +25,7 @@ type BlockPredictor struct {
 }
 
 type ConnSentinel struct {
-	Conn      internet.Connection
+	Conn      net.Conn
 	mux       sync.Mutex
 	predictor *BlockPredictor
 	failed    bool
@@ -39,7 +39,7 @@ func NewBlockPredictor() *BlockPredictor {
 	return predictor
 }
 
-func (p *BlockPredictor) NewReporter(conn internet.Connection) *ConnSentinel {
+func (p *BlockPredictor) NewReporter(conn net.Conn) *ConnSentinel {
 	return &ConnSentinel{predictor: p, Conn: conn}
 }
 
@@ -125,10 +125,7 @@ func (p *BlockPredictor) commitReport(s *ConnSentinel) {
 }
 
 // Whether this SNI should go through splitter or not.
-func (p *BlockPredictor) PredictAllow(s *ConnSentinel) bool {
-	s.mux.Lock()
-	sni := s.sni
-	s.mux.Unlock()
+func (p *BlockPredictor) PredictAllow(sni string) bool {
 	p.mux.RLock()
 	st := p.sniStat[sni]
 	_, allowed := p.allow[sni]
@@ -145,7 +142,6 @@ func (p *BlockPredictor) PredictAllow(s *ConnSentinel) bool {
 	fails := st.failures.Load()
 	if attempts > 2 && fails > attempts/2 {
 		if dice.RollUint64()%attempts > 0 {
-			s.MarkCanceled()
 			return true
 		}
 	}
@@ -198,6 +194,6 @@ func (s *ConnSentinel) Write(buf []byte) (int, error) {
 	return s.Conn.Write(buf)
 }
 
-func DummyReporter(conn internet.Connection) *ConnSentinel {
+func DummyReporter(conn net.Conn) *ConnSentinel {
 	return &ConnSentinel{predictor: nil, Conn: conn}
 }

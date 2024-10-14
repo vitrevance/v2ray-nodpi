@@ -2,6 +2,8 @@
 ./.vscode
 ./deploy
 ./build
+build
+deploy
 
 # Binaries for programs and plugins
 *.exe

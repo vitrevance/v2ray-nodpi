@@ -1,0 +1,9 @@
+{
+    "go.alternateTools": {
+        "dlv": "~/go/bin/dlv",
+        "go": "/usr/local/go/bin/go"
+    },
+    "go.toolsEnvVars": {
+        "CGO_ENABLED": "1"
+    },
+}
