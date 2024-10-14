@@ -1,7 +1,9 @@
 package nodpi
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"regexp"
@@ -359,21 +361,76 @@ func (h *Handler) interveil(c *network.RawConn, sr *ScanResult) error {
 	raw := sr.raw
 
 	ttl := uint8(h.config.GetIspTtl())
-	buf := "hjksdfgkljsdfgklgafdljkbh"
-	seq := uint32(0)
-	c.SendWithOpts([]byte(buf), func(i *layers.IPv4, t *layers.TCP) error {
-		i.TTL = ttl
-		seq = t.Seq
-		return nil
-	})
-	for i := 0; i < 20; i++ {
-		seq += uint32(len(buf))
-		c.SendWithOpts([]byte(buf), func(i *layers.IPv4, t *layers.TCP) error {
+	safeTTL := uint8(23)
+	pos := bytes.Index(raw, []byte(sr.SNI)) + 2
+
+	buf := make([]byte, len(raw))
+	rand.Read(buf)
+
+	seq := c.GetSeq()
+
+	cnt := int(h.config.GetChunkSize())
+	delay := h.config.GetChunkDelay()
+
+	for i := 0; i < cnt; i++ {
+		c.SendWithOpts(buf[:pos], func(i *layers.IPv4, t *layers.TCP) error {
 			i.TTL = ttl
-			t.Seq = seq
 			return nil
 		})
 	}
-	c.Write(raw)
+	c.SendWithOpts(raw[:pos], func(i *layers.IPv4, t *layers.TCP) error {
+		i.TTL = safeTTL
+		return nil
+	})
+	for i := 0; i < cnt; i++ {
+		c.SendWithOpts(buf[:pos], func(i *layers.IPv4, t *layers.TCP) error {
+			i.TTL = ttl
+			return nil
+		})
+	}
+	time.Sleep(time.Millisecond * time.Duration(delay))
+	for i := 0; i < cnt; i++ {
+		c.SendWithOpts(buf[pos:], func(i *layers.IPv4, t *layers.TCP) error {
+			i.TTL = ttl
+			t.Seq += uint32(pos)
+			return nil
+		})
+	}
+	c.SendWithOpts(raw[pos:], func(i *layers.IPv4, t *layers.TCP) error {
+		i.TTL = safeTTL
+		t.Seq += uint32(pos)
+		return nil
+	})
+	for i := 0; i < cnt; i++ {
+		c.SendWithOpts(buf[pos:], func(i *layers.IPv4, t *layers.TCP) error {
+			i.TTL = ttl
+			t.Seq += uint32(pos)
+			return nil
+		})
+	}
+	c.SetSeq(seq + uint32(len(raw)))
 	return nil
 }
+
+// func (h *Handler) interveil(c *network.RawConn, sr *ScanResult) error {
+// 	raw := sr.raw
+
+// 	ttl := uint8(h.config.GetIspTtl())
+// 	buf := "hjksdfgkljsdfgklgafdljkbh"
+// 	seq := uint32(0)
+// 	c.SendWithOpts([]byte(buf), func(i *layers.IPv4, t *layers.TCP) error {
+// 		i.TTL = ttl
+// 		seq = t.Seq
+// 		return nil
+// 	})
+// 	for i := 0; i < 20; i++ {
+// 		seq += uint32(len(buf))
+// 		c.SendWithOpts([]byte(buf), func(i *layers.IPv4, t *layers.TCP) error {
+// 			i.TTL = ttl
+// 			t.Seq = seq
+// 			return nil
+// 		})
+// 	}
+// 	c.Write(raw)
+// 	return nil
+// }

@@ -32,10 +32,11 @@
         {
             "protocol": "nodpi",
             "settings": {
-                "chunk_size": 10,
-                "chunk_delay": 0,
-                "isp_ttl": 7,
+                "chunk_size": 5,
+                "chunk_delay": 200,
+                "isp_ttl": 10,
                 "sni_filters": {
+                    "adaptive_mode": true,
                     "whitelist": [
                         "youtube.com",
                         "googlevideo.com",
