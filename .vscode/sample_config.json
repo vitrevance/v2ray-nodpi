@@ -34,7 +34,7 @@
             "settings": {
                 "chunk_size": 35,
                 "chunk_delay": 1,
-                "isp_ttl": 8,
+                "isp_ttl": 0,
                 "interface": "wlp2s0",
                 "sni_filters": {
                     "whitelist": [
@@ -48,5 +48,10 @@
                 }
             }
         }
-    ]
+    ],
+    "services": {
+        "monitor": {
+            "opt": 5
+        }
+    }
 }
