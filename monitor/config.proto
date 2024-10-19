@@ -12,5 +12,5 @@ message Config {
   option (v2ray.core.common.protoext.message_opt).type = "service";
   option (v2ray.core.common.protoext.message_opt).short_name = "monitor";
 
-  uint32 opt = 1;
+  uint32 port = 1;
 }
